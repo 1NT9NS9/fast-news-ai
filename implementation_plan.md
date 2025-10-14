@@ -276,49 +276,54 @@ class ClusteringService:
 
 ---
 
-## Phase 6: Create Main Entry Point (30 minutes)
+## Phase 6: Create Main Entry Point (30 minutes) ✅ COMPLETED
 
-### 6.1 Create `bot/main.py`
+### 6.1 Create `bot/main.py` ✅
 
-**Lines to move:**
-- Lines 2493-2577: Main bot initialization
-- Application setup
-- Handler registration
-- Bot startup logic
+**Created:** `bot/main.py` (170 lines)
+- [x] `create_application()` - Initialize and configure bot application
+- [x] `main()` - Start bot polling
+- [x] Handler registration with ConversationHandler
+- [x] Service cleanup on shutdown (ScraperService HTTP client)
+- [x] All imports from bot.handlers and bot.services
 
 **Structure:**
 ```python
-from handlers import start, news, manage, buttons
-from services import storage, scraper, ai, clustering
-from utils import config, logger
-
 def create_application():
-    # Initialize services
-    storage_service = storage.StorageService()
-    scraper_service = scraper.ScraperService()
-    ai_service = ai.AIService()
-    clustering_service = clustering.ClusteringService()
+    # Initialize scraper service for cleanup
+    scraper = ScraperService()
 
-    # Create application
-    application = Application.builder().token(config.TELEGRAM_BOT_API).build()
+    # Create application with shutdown hook
+    application = Application.builder().token(TELEGRAM_BOT_API)
+        .post_shutdown(lambda _: scraper.close_http_client())
+        .build()
 
-    # Register handlers
-    application.add_handler(CommandHandler("start", start.start_command))
-    application.add_handler(CommandHandler("news", news.news_command))
+    # Create ConversationHandler with all states
+    conv_handler = ConversationHandler(...)
+
+    # Register all handlers
+    application.add_handler(CommandHandler("start", start_command))
     # ... etc
 
     return application
 
-if __name__ == "__main__":
-    app = create_application()
-    app.run_polling()
+def main():
+    application = create_application()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 ```
 
-### 6.2 Update Root Directory
-- [ ] Keep `bot.py` for backward compatibility (imports from `bot/main.py`)
-- [ ] Update `requirements.txt` if needed
-- [ ] Update `Dockerfile` to use new structure
-- [ ] Update `CLAUDE.md` with new architecture
+### 6.2 Update Root Directory ✅
+- [x] Keep `bot.py` for backward compatibility (imports from `bot/main.py`)
+- [ ] Update `requirements.txt` if needed (no changes required)
+- [ ] Update `Dockerfile` to use new structure (deferred to Phase 7)
+- [ ] Update `CLAUDE.md` with new architecture (deferred to Phase 8)
+
+### 6.3 Test Phase 6 ✅
+- [x] Syntax check passed (bot.py, bot/main.py)
+- [x] Import test passed (from bot.main import main, create_application)
+- [x] Backward compatibility test passed (import bot)
+- [x] Bot.py reduced from 150 to 12 lines
+- [x] Commit: 1c6f551
 
 ---
 
