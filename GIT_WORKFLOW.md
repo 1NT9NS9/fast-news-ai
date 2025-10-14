@@ -117,47 +117,37 @@ git push origin refactor/modularization
 
 ---
 
-### Phase 4: Extract Services
+### Phase 4: Extract Services ✅ COMPLETED
 
 ```bash
-# 4.1 Storage
-git add bot/services/storage.py
-git commit -m "Phase 4.1: Extract storage service
+# 4.1-4.4 Extract all services
+git add bot/services/storage.py bot/services/ai.py bot/services/scraper.py bot/services/clustering.py
+git add bot/services/__init__.py
+git add test_storage.py test_ai.py test_scraper.py test_clustering.py
+git commit -m "Phase 4.1-4.4: Extract all service classes
 
-Lines moved: 64-83, 186-306
-Tested: ✓ Cache works ✓ Backup debouncing works"
+- StorageService (935 lines): File I/O, caching, backups
+- AIService (256 lines): Gemini embeddings and summarization
+- ScraperService (287 lines): Channel scraping
+- ClusteringService (87 lines): DBSCAN clustering
+
+Tests: ✓ All services tested independently"
 git push origin refactor/modularization
+# ✅ Commit: aa08c98
 
-# 4.2 AI
-git add bot/services/ai.py
-git commit -m "Phase 4.2: Extract AI service
+# 4.5 Update bot.py to use services
+git add bot.py update_bot_services.py
+git commit -m "Phase 4.5: Update bot.py to use service classes
 
-Lines moved: 1020-1067, 1122-1279
-Tested: ✓ Embeddings work ✓ Summarization works"
+- Created update_bot_services.py automation script
+- Replaced ~30+ function calls with service methods
+- Fixed indentation issues
+- Removed 1,115 lines of old function definitions
+- Added service initialization
+
+Tests: ✓ Syntax check ✓ Import test"
 git push origin refactor/modularization
-
-# 4.3 Scraper
-git add bot/services/scraper.py
-git commit -m "Phase 4.3: Extract scraper service
-
-Lines moved: 308-640
-Tested: ✓ Scraping works ✓ Validation works"
-git push origin refactor/modularization
-
-# 4.4 Clustering
-git add bot/services/clustering.py
-git commit -m "Phase 4.4: Extract clustering service
-
-Lines moved: 1068-1120
-Tested: ✓ Clustering works"
-git push origin refactor/modularization
-
-# 4.5 Update bot.py
-git add bot.py
-git commit -m "Phase 4.5: Update bot.py to use all services
-
-Tested: ✓ /news works end-to-end"
-git push origin refactor/modularization
+# ✅ Commit: 334d33b
 ```
 
 ---

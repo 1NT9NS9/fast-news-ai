@@ -99,11 +99,11 @@ Lines to move from `bot.py:15-42`:
 
 ---
 
-## Phase 4: Extract Services (2-3 hours)
+## Phase 4: Extract Services (2-3 hours) ✅ COMPLETED
 
 **This is the most complex phase - proceed carefully**
 
-### 4.1 Extract Storage Service (`services/storage.py`)
+### 4.1 Extract Storage Service (`services/storage.py`) ✅
 
 **Lines to move:**
 - Lines 64-83: Cache initialization (`_user_data_cache`, `_cache_lock`, backup tracking)
@@ -132,7 +132,7 @@ class StorageService:
 
 **Dependencies:** `utils/config`, `utils/logger`, `models/user_data`
 
-### 4.2 Extract AI Service (`services/ai.py`)
+### 4.2 Extract AI Service (`services/ai.py`) ✅
 
 **Lines to move:**
 - Lines 1020-1067: `get_embeddings()` and batching logic
@@ -157,7 +157,7 @@ class AIService:
 
 **Dependencies:** `utils/config`, `utils/logger`
 
-### 4.3 Extract Scraper Service (`services/scraper.py`)
+### 4.3 Extract Scraper Service (`services/scraper.py`) ✅
 
 **Lines to move:**
 - Lines 308-386: `extract_channel_username()`
@@ -183,7 +183,7 @@ class ScraperService:
 
 **Dependencies:** `utils/config`, `utils/logger`
 
-### 4.4 Extract Clustering Service (`services/clustering.py`)
+### 4.4 Extract Clustering Service (`services/clustering.py`) ✅
 
 **Lines to move:**
 - Lines 1068-1120: `cluster_posts()` with DBSCAN logic
@@ -200,11 +200,14 @@ class ClusteringService:
 
 **Dependencies:** `utils/config`, `utils/logger`
 
-### 4.5 Test Phase 4
-- [ ] Test each service independently with sample data
-- [ ] Verify service initialization
-- [ ] Test error handling and retries
-- [ ] Verify async operations work correctly
+### 4.5 Test Phase 4 ✅
+- [x] Test each service independently with sample data
+- [x] Verify service initialization
+- [x] Test error handling and retries
+- [x] Verify async operations work correctly
+- [x] Update bot.py to use all services (Phase 4.5)
+- [x] Verify bot.py syntax and imports
+- [x] Commit: aa08c98 (Phase 4.1-4.4), 334d33b (Phase 4.5)
 
 ---
 
