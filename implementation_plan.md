@@ -419,3 +419,178 @@ If critical issues arise:
 - Consider using a proper DI framework
 - Add mypy type checking
 - Consider moving to async file I/O throughout
+
+---
+
+## Appendix: Test Files for Phase 4 Services
+
+The following test files were created during Phase 4 to verify each service independently. These can be used during Phase 7 for regression testing if needed.
+
+### test_storage.py
+```python
+# -*- coding: utf-8 -*-
+"""Quick test for StorageService"""
+import asyncio
+from bot.services.storage import StorageService
+
+
+async def test_storage():
+    storage = StorageService()
+    print('[OK] StorageService instantiated successfully')
+
+    # Test that all key methods exist
+    assert hasattr(storage, 'load_user_data')
+    assert hasattr(storage, 'save_user_data')
+    assert hasattr(storage, 'get_user_channels')
+    assert hasattr(storage, 'backup_user_data')
+    print('[OK] All storage methods are accessible')
+
+    # Test loading user data (should create empty file if not exists)
+    data = await storage.load_user_data()
+    assert isinstance(data, dict)
+    print(f'[OK] User data loaded: {len(data)} users')
+
+    print('\n[PASS] Storage Service test completed successfully!')
+    return True
+
+
+if __name__ == '__main__':
+    result = asyncio.run(test_storage())
+    exit(0 if result else 1)
+```
+
+### test_ai.py
+```python
+# -*- coding: utf-8 -*-
+"""Quick test for AIService"""
+import asyncio
+from bot.services.ai import AIService
+
+
+async def test_ai():
+    ai = AIService()
+    print('[OK] AIService instantiated successfully')
+
+    # Test that all key methods exist
+    assert hasattr(ai, 'get_embeddings')
+    assert hasattr(ai, 'summarize_cluster')
+    assert hasattr(ai, 'get_gemini_model')
+    print('[OK] All AI methods are accessible')
+
+    # Test Gemini model initialization (doesn't require API call)
+    model = ai.get_gemini_model()
+    assert model is not None
+    print('[OK] Gemini model initialized')
+
+    print('\n[PASS] AI Service test completed successfully!')
+    print('[NOTE] Skipped embeddings test (requires API key and internet)')
+    return True
+
+
+if __name__ == '__main__':
+    result = asyncio.run(test_ai())
+    exit(0 if result else 1)
+```
+
+### test_scraper.py
+```python
+# -*- coding: utf-8 -*-
+"""Quick test for ScraperService"""
+import asyncio
+from bot.services.scraper import ScraperService
+
+
+async def test_scraper():
+    scraper = ScraperService()
+    print('[OK] ScraperService instantiated successfully')
+
+    # Test that all key methods exist
+    assert hasattr(scraper, 'scrape_channel')
+    assert hasattr(scraper, 'validate_channel_access')
+    assert hasattr(scraper, 'parse_subscriber_count')
+    print('[OK] All scraper methods are accessible')
+
+    # Test HTTP client initialization
+    client = await scraper.get_http_client()
+    assert client is not None
+    print('[OK] HTTP client initialized')
+
+    # Cleanup
+    await scraper.close_http_client()
+    print('[OK] HTTP client closed')
+
+    print('\n[PASS] Scraper Service test completed successfully!')
+    print('[NOTE] Skipped actual scraping test (requires internet)')
+    return True
+
+
+if __name__ == '__main__':
+    result = asyncio.run(test_scraper())
+    exit(0 if result else 1)
+```
+
+### test_clustering.py
+```python
+# -*- coding: utf-8 -*-
+"""Quick test for ClusteringService"""
+import numpy as np
+from bot.services.clustering import ClusteringService
+
+
+def test_clustering():
+    clustering = ClusteringService()
+    print('[OK] ClusteringService instantiated successfully')
+
+    # Test that all key methods exist
+    assert hasattr(clustering, 'cluster_posts')
+    print('[OK] All clustering methods are accessible')
+
+    # Test basic clustering with sample data
+    posts = [
+        {'text': 'Post 1', 'channel': '@test'},
+        {'text': 'Post 2', 'channel': '@test'}
+    ]
+    embeddings = [np.array([1.0, 0.0, 0.0]), np.array([0.9, 0.1, 0.0])]  # Similar
+    clusters = clustering.cluster_posts(embeddings, posts)
+    assert len(clusters) > 0
+    print(f'[OK] Clustering works - created {len(clusters)} cluster(s) from 2 posts')
+
+    print('\n[PASS] Clustering Service test completed successfully!')
+    return True
+
+
+if __name__ == '__main__':
+    result = test_clustering()
+    exit(0 if result else 1)
+```
+
+### Running All Tests
+
+To run all service tests:
+```bash
+python test_storage.py
+python test_ai.py
+python test_scraper.py
+python test_clustering.py
+```
+
+Or create a simple test runner:
+```bash
+# test_all_services.bat (Windows)
+@echo off
+echo Testing all services...
+python test_storage.py && python test_ai.py && python test_scraper.py && python test_clustering.py
+if %errorlevel% == 0 (
+    echo All tests passed!
+) else (
+    echo Some tests failed!
+)
+```
+
+These tests verify:
+- ✓ Service instantiation
+- ✓ Method accessibility
+- ✓ Basic initialization (models, clients, caches)
+- ✓ Cleanup operations (closing connections)
+
+**Note:** Full integration tests (actual API calls, scraping, etc.) are deferred to Phase 7.
