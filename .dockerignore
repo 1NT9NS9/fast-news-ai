@@ -1,0 +1,51 @@
+# Virtual environment
+venv/
+env/
+ENV/
+.venv
+
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+bot.log
+bot_user.log
+
+# User data and backups
+user_data.json
+user_data_backup_*.json
+channel_feed.json
+.claude/
+backups/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development documentation (exclude from Docker)
+CLAUDE.md
+AGENTS.md
+implementation_plan.md
+GIT_WORKFLOW.md
+
+# Docker
+Dockerfile
+.dockerignore

@@ -1,0 +1,8 @@
+python-telegram-bot==21.6
+google-generativeai==0.8.3
+numpy==2.1.2
+scikit-learn==1.5.2  # For cosine similarity calculation
+httpx==0.27.2        # For modern, async HTTP requests
+beautifulsoup4==4.12.3 # For parsing HTML from channel web previews
+python-dotenv==1.1.1 # For environment variable management
+aiofiles==23.2.1  # Async file I/O for persistence
