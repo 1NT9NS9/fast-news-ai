@@ -1,13 +1,6 @@
 ﻿# -*- coding: utf-8 -*-
 import os
 import shutil
-
-# Suppress gRPC warnings - must be set BEFORE importing google libraries
-os.environ['GRPC_VERBOSITY'] = 'NONE'
-os.environ['GLOG_minloglevel'] = '2'
-os.environ['GRPC_ENABLE_FORK_SUPPORT'] = '0'
-os.environ['GRPC_POLL_STRATEGY'] = 'poll'
-
 import json
 import asyncio
 import aiofiles
@@ -19,59 +12,29 @@ import httpx
 from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
-from dotenv import load_dotenv
 import google.generativeai as genai
 from sklearn.cluster import DBSCAN
 import numpy as np
-import logging
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
+# Import from bot.utils
+from bot.utils.config import (
+    TELEGRAM_BOT_API, GEMINI_API, ADMIN_CHAT_ID, ADMIN_CHAT_ID_INT,
+    USER_DATA_FILE, CHANNEL_FEED_FILE, USER_DATA_BACKUP_DIR,
+    MAX_BACKUP_COUNT, BACKUP_RETENTION_DAYS,
+    MAX_CHANNELS, MAX_POSTS_PER_CHANNEL,
+    DEFAULT_NEWS_TIME_LIMIT_HOURS, MAX_NEWS_TIME_LIMIT_HOURS,
+    DEFAULT_MAX_SUMMARY_POSTS, MAX_SUMMARY_POSTS_LIMIT,
+    MAX_NEWS_REQUESTS_PER_DAY,
+    SIMILARITY_THRESHOLD, GEMINI_API_RATE_LIMIT, GEMINI_CONCURRENT_LIMIT
 )
-logger = logging.getLogger(__name__)
+from bot.utils.logger import setup_logging
 
-# Create separate logger for user interactions
-user_logger = logging.getLogger('user_interactions')
-user_logger.setLevel(logging.INFO)
-user_handler = logging.FileHandler('bot_user.log', encoding='utf-8')
-user_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-user_logger.addHandler(user_handler)
-# Prevent propagation to root logger to keep it separate
-user_logger.propagate = False
+# Setup logging
+logger, user_logger = setup_logging()
 
-TELEGRAM_BOT_API = os.getenv('TELEGRAM_BOT_API')
-GEMINI_API = os.getenv('GEMINI_API')
-ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')  # Admin's Telegram chat ID for receiving forms
-USER_DATA_FILE = 'user_data.json'
-CHANNEL_FEED_FILE = 'channel_feed.json'
-USER_DATA_BACKUP_DIR = os.path.join('backups', 'user_data')
-MAX_BACKUP_COUNT = 20
-BACKUP_RETENTION_DAYS = 7
-try:
-    ADMIN_CHAT_ID_INT = int(ADMIN_CHAT_ID) if ADMIN_CHAT_ID else None
-except ValueError:
+# Log ADMIN_CHAT_ID error if needed
+if ADMIN_CHAT_ID and ADMIN_CHAT_ID_INT is None:
     logger.error('ADMIN_CHAT_ID must be an integer value')
-    ADMIN_CHAT_ID_INT = None
-
-MAX_CHANNELS = 10
-SIMILARITY_THRESHOLD = 0.9
-MAX_POSTS_PER_CHANNEL = 20
-DEFAULT_NEWS_TIME_LIMIT_HOURS = 24  # Default time range for news
-MAX_NEWS_TIME_LIMIT_HOURS = 720  # Maximum allowed time range (30 days)
-DEFAULT_MAX_SUMMARY_POSTS = 10  # Default number of news summaries
-MAX_SUMMARY_POSTS_LIMIT = 30  # Maximum allowed summaries
-MAX_NEWS_REQUESTS_PER_DAY = 5  # Rate limit for /news command
-GEMINI_API_RATE_LIMIT = 4000  # Gemini API rate limit: 4000 requests per minute
-GEMINI_CONCURRENT_LIMIT = 4000  # Max concurrent Gemini API requests
 
 # Configure Google Generative AI
 genai.configure(api_key=GEMINI_API)
