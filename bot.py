@@ -32,53 +32,21 @@ from bot.utils.logger import setup_logging
 # Import from bot.models
 from bot.models.user_data import migrate_user_data_to_folders, validate_user_data
 
+# Import services
+from bot.services import StorageService, AIService, ScraperService, ClusteringService
+
 # Setup logging
 logger, user_logger = setup_logging()
+
+# Initialize services (global instances)
+storage = StorageService()
+ai_service = AIService()
+scraper = ScraperService()
+clustering = ClusteringService()
 
 # Log ADMIN_CHAT_ID error if needed
 if ADMIN_CHAT_ID and ADMIN_CHAT_ID_INT is None:
     logger.error('ADMIN_CHAT_ID must be an integer value')
-
-# Configure Google Generative AI
-genai.configure(api_key=GEMINI_API)
-
-# In-memory cache for user data to reduce file I/O
-_user_data_cache = None
-_cache_lock = asyncio.Lock()
-_user_channels_cache = {}
-_user_channels_cache_lock = asyncio.Lock()
-
-# Backup debouncing - track last backup time to avoid excessive backups
-_last_backup_time = 0
-_backup_debounce_seconds = 60  # Max 1 backup per minute
-
-# Semaphore for Gemini API rate limiting
-_gemini_semaphore = asyncio.Semaphore(GEMINI_CONCURRENT_LIMIT)
-
-# Cached Gemini model instance
-_gemini_model = None
-
-
-_http_client: Optional[httpx.AsyncClient] = None
-_http_client_lock = asyncio.Lock()
-
-
-async def get_http_client() -> httpx.AsyncClient:
-    """Return a shared HTTP client with connection pooling."""
-    global _http_client
-    if _http_client is None:
-        async with _http_client_lock:
-            if _http_client is None:
-                _http_client = httpx.AsyncClient(follow_redirects=True, timeout=30.0)
-    return _http_client
-
-
-async def close_http_client(*_) -> None:
-    """Close the shared HTTP client if it was created."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
 
 # Conversation states for user input handling
 WAITING_FOR_CHANNEL_ADD = 1
@@ -95,555 +63,6 @@ WAITING_FOR_RESTRICT_ACCESS_CHANNEL = 10
 WAITING_FOR_RESTRICT_ACCESS_REASON = 11
 # Folder management states
 WAITING_FOR_NEW_FOLDER_NAME = 12
-
-
-def _cleanup_old_backups():
-    """Remove backups exceeding retention or rotation limits."""
-    try:
-        entries = os.listdir(USER_DATA_BACKUP_DIR)
-    except FileNotFoundError:
-        return
-
-    cutoff = datetime.utcnow() - timedelta(days=BACKUP_RETENTION_DAYS)
-    backups = []
-    for entry in entries:
-        if not entry.startswith('user_data_') or not entry.endswith('.json'):
-            continue
-        path = os.path.join(USER_DATA_BACKUP_DIR, entry)
-        try:
-            stat_result = os.stat(path)
-        except OSError as exc:
-            logger.warning('Failed to stat backup %s: %s', path, exc)
-            continue
-        backups.append((path, stat_result.st_mtime))
-
-    backups.sort(key=lambda item: item[1], reverse=True)
-
-    kept_backups = []
-    for path, mtime in backups:
-        backup_time = datetime.utcfromtimestamp(mtime)
-        if backup_time < cutoff:
-            try:
-                os.remove(path)
-            except OSError as exc:
-                logger.warning('Failed to remove expired backup %s: %s', path, exc)
-            continue
-        kept_backups.append((path, mtime))
-
-    for path, _ in kept_backups[MAX_BACKUP_COUNT:]:
-        try:
-            os.remove(path)
-        except OSError as exc:
-            logger.warning('Failed to remove rotated backup %s: %s', path, exc)
-
-
-def _perform_user_data_backup():
-    """Create a timestamped backup of the user data file."""
-    if not os.path.exists(USER_DATA_FILE):
-        return
-
-    try:
-        os.makedirs(USER_DATA_BACKUP_DIR, exist_ok=True)
-    except OSError as exc:
-        logger.warning('Failed to ensure backup directory %s: %s', USER_DATA_BACKUP_DIR, exc)
-        return
-
-    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-    backup_filename = f'user_data_{timestamp}.json'
-    backup_path = os.path.join(USER_DATA_BACKUP_DIR, backup_filename)
-
-    try:
-        shutil.copy2(USER_DATA_FILE, backup_path)
-    except OSError as exc:
-        logger.warning('Failed to create user data backup: %s', exc)
-        return
-
-    _cleanup_old_backups()
-
-
-async def backup_user_data():
-    """Asynchronously back up the current user data state with debouncing."""
-    global _last_backup_time
-
-    current_time = datetime.now().timestamp()
-    time_since_last_backup = current_time - _last_backup_time
-
-    # Skip backup if less than debounce period has passed
-    if time_since_last_backup < _backup_debounce_seconds:
-        logger.debug(f"Skipping backup (last backup {time_since_last_backup:.1f}s ago, debounce: {_backup_debounce_seconds}s)")
-        return
-
-    # Update last backup time and perform backup
-    _last_backup_time = current_time
-    await asyncio.to_thread(_perform_user_data_backup)
-
-
-def list_user_data_backups():
-    """Return sorted metadata for existing user data backups."""
-    try:
-        entries = os.listdir(USER_DATA_BACKUP_DIR)
-    except FileNotFoundError:
-        return []
-
-    backups = []
-    for entry in entries:
-        if not entry.startswith('user_data_') or not entry.endswith('.json'):
-            continue
-        path = os.path.join(USER_DATA_BACKUP_DIR, entry)
-        try:
-            stat_result = os.stat(path)
-        except OSError as exc:
-            logger.warning('Failed to stat backup %s: %s', path, exc)
-            continue
-        backups.append({'path': path, 'name': entry, 'mtime': stat_result.st_mtime})
-
-    backups.sort(key=lambda item: item['mtime'], reverse=True)
-    return backups
-
-
-async def _invalidate_user_channel_cache(user_id=None):
-    '''Clear cached channel lists either globally or for a specific user.'''
-    async with _user_channels_cache_lock:
-        if user_id is None:
-            _user_channels_cache.clear()
-        else:
-            _user_channels_cache.pop(str(user_id), None)
-
-
-async def _cache_user_channels(user_id_str, channels):
-    '''Store a snapshot of a user's channels for quick reuse.'''
-    async with _user_channels_cache_lock:
-        _user_channels_cache[user_id_str] = tuple(channels)
-
-
-def _extract_all_channels(user_data):
-    '''Return a deduplicated list of all channels from the user data.'''
-    if not user_data:
-        return []
-    folders = user_data.get('folders')
-    if isinstance(folders, dict):
-        return list(dict.fromkeys(
-            channel
-            for channels in folders.values()
-            for channel in channels
-        ))
-    return list(dict.fromkeys(user_data.get('channels', [])))
-
-
-
-async def restore_user_data_from_backup(backup_path):
-    """Restore user data from a selected backup file."""
-    global _user_data_cache
-
-    async with _cache_lock:
-        await backup_user_data()
-        try:
-            async with aiofiles.open(backup_path, 'r', encoding='utf-8') as src:
-                raw_content = await src.read()
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(f'Backup file not found: {backup_path}') from exc
-        except OSError as exc:
-            raise OSError(f'Failed to read backup {backup_path}: {exc}') from exc
-
-        try:
-            restored_data = json.loads(raw_content)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f'Backup file is not valid JSON: {backup_path}') from exc
-
-        restored_data = migrate_user_data_to_folders(restored_data)
-
-        try:
-            async with aiofiles.open(USER_DATA_FILE, 'w', encoding='utf-8') as dst:
-                await dst.write(json.dumps(restored_data, indent=2, ensure_ascii=False))
-        except OSError as exc:
-            raise OSError(f'Failed to write restored data: {exc}') from exc
-
-        _user_data_cache = restored_data
-        await _invalidate_user_channel_cache()
-
-    logger.info('User data restored from backup %s', backup_path)
-    return restored_data
-
-
-async def _attempt_auto_restore_user_data(reason):
-    """Attempt to auto-restore user data from the newest valid backup."""
-    backups = list_user_data_backups()
-    if not backups:
-        logger.error('Unable to auto-restore user data (%s): no backups found.', reason)
-        return None
-
-    await backup_user_data()
-
-    for backup in backups:
-        path = backup['path']
-        name = backup['name']
-        try:
-            async with aiofiles.open(path, 'r', encoding='utf-8') as src:
-                raw_content = await src.read()
-            candidate = json.loads(raw_content)
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning('Skipping backup %s due to read error: %s', name, exc)
-            continue
-
-        candidate = migrate_user_data_to_folders(candidate)
-        is_valid, issues = validate_user_data(candidate)
-        if not is_valid:
-            logger.warning('Skipping backup %s due to validation errors: %s', name, '; '.join(issues))
-            continue
-
-        try:
-            async with aiofiles.open(USER_DATA_FILE, 'w', encoding='utf-8') as dst:
-                await dst.write(json.dumps(candidate, indent=2, ensure_ascii=False))
-        except OSError as exc:
-            logger.error('Failed to write restored user data from %s: %s', name, exc)
-            return None
-
-        logger.warning('Auto-restored user data from backup %s after %s.', name, reason)
-        return candidate
-
-    logger.error('Unable to auto-restore user data (%s): no valid backups available.', reason)
-    return None
-
-
-
-async def load_user_data():
-    """Load user data from JSON file with validation and auto-recovery."""
-    global _user_data_cache
-
-    async with _cache_lock:
-        if _user_data_cache is not None:
-            return _user_data_cache
-
-        try:
-            async with aiofiles.open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-                raw_content = await f.read()
-        except FileNotFoundError:
-            _user_data_cache = {}
-            await _invalidate_user_channel_cache()
-            return _user_data_cache
-        except OSError as exc:
-            logger.error('Failed to read %s: %s', USER_DATA_FILE, exc)
-            _user_data_cache = {}
-            await _invalidate_user_channel_cache()
-            return _user_data_cache
-
-        try:
-            raw_data = json.loads(raw_content)
-        except json.JSONDecodeError as exc:
-            logger.error('Failed to parse %s: %s', USER_DATA_FILE, exc)
-            restored = await _attempt_auto_restore_user_data('JSON decode error')
-            if restored is not None:
-                _user_data_cache = restored
-                await _invalidate_user_channel_cache()
-                return restored
-            _user_data_cache = {}
-            await _invalidate_user_channel_cache()
-            return _user_data_cache
-
-        data = migrate_user_data_to_folders(raw_data)
-        is_valid, issues = validate_user_data(data)
-        if is_valid:
-            _user_data_cache = data
-            await _invalidate_user_channel_cache()
-            return data
-
-        logger.error('User data validation failed: %s', '; '.join(issues))
-        restored = await _attempt_auto_restore_user_data('validation failure')
-        if restored is not None:
-            _user_data_cache = restored
-            await _invalidate_user_channel_cache()
-            return restored
-
-        _user_data_cache = {}
-        await _invalidate_user_channel_cache()
-        return _user_data_cache
-
-
-
-async def save_user_data(data):
-    """Save user data to JSON file and update cache after validation."""
-    global _user_data_cache
-
-    async with _cache_lock:
-        is_valid, issues = validate_user_data(data)
-        if not is_valid:
-            logger.error('Aborting save_user_data due to validation errors: %s', '; '.join(issues))
-            raise ValueError('User data failed validation; see logs for details.')
-
-        # Trigger backup in background (non-blocking, fire-and-forget)
-        if os.path.exists(USER_DATA_FILE):
-            asyncio.create_task(backup_user_data())
-
-        _user_data_cache = data
-        serialized = json.dumps(data, indent=2, ensure_ascii=False)
-        async with aiofiles.open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
-            await f.write(serialized)
-
-
-async def get_user_channels(user_id):
-    """Get channels for a specific user from their active folder."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str in data:
-        user_data = data[user_id_str]
-        # Check if user has folder structure
-        if 'folders' in user_data and 'active_folder' in user_data:
-            active_folder = user_data['active_folder']
-            folders = user_data['folders']
-            return folders.get(active_folder, [])
-        # Fallback to old structure
-        return user_data.get('channels', [])
-    return []
-
-
-async def get_active_folder_name(user_id):
-    """Get the name of the user's active folder."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str in data:
-        user_data = data[user_id_str]
-        if 'active_folder' in user_data:
-            return user_data['active_folder']
-    return 'Папка1'
-
-
-async def get_all_user_channels(user_id):
-    """Return all channels across folders for a user, cached for reuse."""
-    user_id_str = str(user_id)
-
-    async with _user_channels_cache_lock:
-        cached = _user_channels_cache.get(user_id_str)
-    if cached is not None:
-        return list(cached)
-
-    data = await load_user_data()
-    user_data = data.get(user_id_str)
-    channels = _extract_all_channels(user_data)
-
-    await _cache_user_channels(user_id_str, channels)
-    return channels
-
-
-async def set_user_channels(user_id, channels):
-    """Set channels for a specific user in their active folder."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data:
-        data[user_id_str] = {
-            'folders': {'Папка1': []},
-            'active_folder': 'Папка1'
-        }
-
-    user_data = data[user_id_str]
-    # Update channels in active folder
-    if 'folders' in user_data and 'active_folder' in user_data:
-        active_folder = user_data['active_folder']
-        user_data['folders'][active_folder] = channels
-    else:
-        # Fallback to old structure
-        user_data['channels'] = channels
-
-    await save_user_data(data)
-
-    all_channels = _extract_all_channels(user_data)
-    await _cache_user_channels(user_id_str, all_channels)
-
-
-async def get_user_time_limit(user_id):
-    """Get news time limit for a specific user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str in data:
-        return data[user_id_str].get('time_limit', DEFAULT_NEWS_TIME_LIMIT_HOURS)
-    return DEFAULT_NEWS_TIME_LIMIT_HOURS
-
-
-async def set_user_time_limit(user_id, hours):
-    """Set news time limit for a specific user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data:
-        data[user_id_str] = {}
-    data[user_id_str]['time_limit'] = hours
-    await save_user_data(data)
-
-
-async def get_user_max_posts(user_id):
-    """Get max posts limit for a specific user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str in data:
-        return data[user_id_str].get('max_posts', DEFAULT_MAX_SUMMARY_POSTS)
-    return DEFAULT_MAX_SUMMARY_POSTS
-
-
-async def set_user_max_posts(user_id, max_posts):
-    """Set max posts limit for a specific user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data:
-        data[user_id_str] = {}
-    data[user_id_str]['max_posts'] = max_posts
-    await save_user_data(data)
-
-
-async def get_user_folders(user_id):
-    """Get all folders for a user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str in data and 'folders' in data[user_id_str]:
-        return data[user_id_str]['folders']
-    return {'Папка1': []}
-
-
-async def create_folder(user_id, folder_name):
-    """Create a new folder for a user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data:
-        data[user_id_str] = {
-            'folders': {},
-            'active_folder': 'Папка1'
-        }
-    if 'folders' not in data[user_id_str]:
-        data[user_id_str]['folders'] = {}
-
-    # Check if folder already exists
-    if folder_name in data[user_id_str]['folders']:
-        return False
-
-    data[user_id_str]['folders'][folder_name] = []
-    await save_user_data(data)
-    await _cache_user_channels(user_id_str, _extract_all_channels(data[user_id_str]))
-    return True
-
-
-async def delete_folder(user_id, folder_name):
-    """Delete a folder (and its channels) for a user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data or 'folders' not in data[user_id_str]:
-        return False
-
-    folders = data[user_id_str]['folders']
-    if folder_name not in folders:
-        return False
-
-    # Don't allow deleting Папка1 if it's the only folder
-    if folder_name == 'Папка1' and len(folders) == 1:
-        return False
-
-    del folders[folder_name]
-
-    # If active folder was deleted, switch to Папка1 or first available
-    if data[user_id_str].get('active_folder') == folder_name:
-        if 'Папка1' in folders:
-            data[user_id_str]['active_folder'] = 'Папка1'
-        else:
-            data[user_id_str]['active_folder'] = list(folders.keys())[0] if folders else 'Папка1'
-
-    await save_user_data(data)
-    await _cache_user_channels(user_id_str, _extract_all_channels(data[user_id_str]))
-    return True
-
-
-async def switch_active_folder(user_id, folder_name):
-    """Switch the user's active folder."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-    if user_id_str not in data or 'folders' not in data[user_id_str]:
-        return False
-
-    if folder_name not in data[user_id_str]['folders']:
-        return False
-
-    data[user_id_str]['active_folder'] = folder_name
-    await save_user_data(data)
-    return True
-
-
-async def check_news_rate_limit(user_id):
-    """
-    Check if user has exceeded daily news request limit.
-
-    Returns:
-        tuple: (bool, int) - (is_allowed, remaining_requests)
-    """
-    data = await load_user_data()
-    user_id_str = str(user_id)
-
-    if user_id_str not in data:
-        data[user_id_str] = {}
-
-    user_data = data[user_id_str]
-    today = datetime.now(timezone.utc).date().isoformat()
-
-    # Check if we need to reset the counter (new day)
-    last_request_date = user_data.get('last_news_date')
-    if last_request_date != today:
-        user_data['news_request_count'] = 0
-        user_data['last_news_date'] = today
-        await save_user_data(data)
-
-    request_count = user_data.get('news_request_count', 0)
-    remaining = MAX_NEWS_REQUESTS_PER_DAY - request_count
-
-    return (request_count < MAX_NEWS_REQUESTS_PER_DAY, remaining)
-
-
-async def increment_news_request(user_id):
-    """Increment the news request counter for a user."""
-    data = await load_user_data()
-    user_id_str = str(user_id)
-
-    if user_id_str not in data:
-        data[user_id_str] = {}
-
-    user_data = data[user_id_str]
-    today = datetime.now(timezone.utc).date().isoformat()
-
-    # Ensure we're tracking the right day
-    if user_data.get('last_news_date') != today:
-        user_data['news_request_count'] = 0
-        user_data['last_news_date'] = today
-
-    user_data['news_request_count'] = user_data.get('news_request_count', 0) + 1
-    await save_user_data(data)
-
-
-
-async def load_channel_feed():
-    """Load channel feed data from JSON file."""
-    try:
-        async with aiofiles.open(CHANNEL_FEED_FILE, 'r', encoding='utf-8') as f:
-            content = await f.read()
-    except FileNotFoundError:
-        return {}
-    except OSError:
-        return {}
-
-    if not content:
-        return {}
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {}
-
-
-
-async def save_channel_feed(data):
-    """Save channel feed data to JSON file."""
-    serialized = json.dumps(data, indent=2, ensure_ascii=False)
-    async with aiofiles.open(CHANNEL_FEED_FILE, 'w', encoding='utf-8') as f:
-        await f.write(serialized)
-
-
-
-async def check_channel_in_feed(channel_name):
-    """Check if a channel is in the feed."""
-    feed_data = await load_channel_feed()
-    return channel_name in feed_data
 
 
 def create_persistent_keyboard():
@@ -672,7 +91,7 @@ def create_main_menu():
 async def create_folder_management_menu(user_id):
     """Create folder management menu with all folders."""
     # Load user data once instead of calling get_user_folders and get_active_folder_name separately
-    data = await load_user_data()
+    data = await storage.load_user_data()
     user_id_str = str(user_id)
 
     # Get folders and active folder from loaded data
@@ -775,56 +194,6 @@ def create_hashtag_keyboard():
 # Helper Functions for Code Reusability
 # ============================================================================
 
-async def validate_channel_access(channel: str, update: Update) -> tuple[bool, str]:
-    """
-    Validate that a Telegram channel is accessible.
-
-    Args:
-        channel: Channel name (with or without @)
-        update: Telegram Update object
-
-    Returns:
-        tuple: (is_valid: bool, error_message: str or None)
-    """
-    validation_msg = await update.message.reply_text(
-        f"🔍 Проверяю доступность канала {channel}..."
-    )
-
-    try:
-        channel_name = channel.lstrip('@')
-        url = f"https://t.me/s/{channel_name}"
-
-        client = await get_http_client()
-        response = await client.get(url, timeout=10.0)
-        response.raise_for_status()
-
-        if "tgme_channel_info" not in response.text and \
-           "tgme_widget_message" not in response.text:
-            await validation_msg.edit_text(
-                f"❌ Не удалось получить доступ к {channel}. "
-                "Канал может быть приватным или не существует."
-            )
-            return False, "Channel not accessible"
-
-        await validation_msg.edit_text(f"✅ Канал {channel} проверен и доступен!")
-        return True, None
-
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"Channel validation failed: HTTP {e.response.status_code}")
-        await validation_msg.edit_text(
-            f"❌ Не удалось получить доступ к {channel}. "
-            "Канал может быть приватным или не существует."
-        )
-        return False, f"HTTP {e.response.status_code}"
-
-    except Exception as e:
-        logger.error(f"Error validating channel: {e}", exc_info=True)
-        await validation_msg.edit_text(
-            "😕 Произошла ошибка при проверке канала. Попробуйте позже."
-        )
-        return False, str(e)
-
-
 async def validate_and_store_username(update: Update, context: ContextTypes.DEFAULT_TYPE, validation_msg=None) -> bool:
     """
     Validate user has Telegram username and store it in context.
@@ -902,7 +271,7 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
         message_obj: Optional message object (for query.message), defaults to update.message
         processing_msg: Optional processing message to delete after sending
     """
-    data = await load_user_data()
+    data = await storage.load_user_data()
     user_id_str = str(user_id)
     msg = message_obj or update.message
 
@@ -927,7 +296,7 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
     if 'folders' in user_data:
         folders = user_data['folders']
         active_folder = user_data.get('active_folder', 'Папка1')
-        all_channels = await get_all_user_channels(user_id)
+        all_channels = await storage.get_all_user_channels(user_id)
 
         if not all_channels:
             if processing_msg:
@@ -1004,7 +373,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_logger.info(f"User_{user_id} (@{username}) clicked /start")
 
     # Initialize user with Папка1 if new user
-    data = await load_user_data()
+    data = await storage.load_user_data()
     user_id_str = str(user_id)
     if user_id_str not in data:
         data[user_id_str] = {
@@ -1016,7 +385,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'max_summary_posts': DEFAULT_MAX_SUMMARY_POSTS,
             'news_requests': {}
         }
-        await save_user_data(data)
+        await storage.save_user_data(data)
         logger.info(f"Created Папка1 for new user {user_id}")
 
     welcome_message = (
@@ -1075,7 +444,7 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text('You are not authorized to use this command.')
         return
 
-    backups = list_user_data_backups()
+    backups = storage.list_user_data_backups()
 
     if not backups:
         await update.message.reply_text('No backups are currently available.')
@@ -1107,7 +476,7 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
 
     selected = backups[selection_index]
     try:
-        await restore_user_data_from_backup(selected['path'])
+        await storage.restore_user_data_from_backup(selected['path'])
     except (FileNotFoundError, ValueError, OSError) as exc:
         logger.error('Failed restoring backup %s: %s', selected['path'], exc)
         await update.message.reply_text(f'Failed to restore backup: {exc}')
@@ -1144,9 +513,9 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Get current user channels (from active folder)
-    channels = await get_user_channels(user_id)
+    channels = await storage.get_user_channels(user_id)
     # Get all channels across all folders
-    all_channels = await get_all_user_channels(user_id)
+    all_channels = await storage.get_all_user_channels(user_id)
 
     # Check if channel already exists in ANY folder (no duplicates allowed)
     if channel in all_channels:
@@ -1159,7 +528,7 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Validate channel accessibility
-    is_valid, error_msg = await validate_channel_access(channel, update)
+    is_valid, error_msg = await scraper.validate_channel_access(channel, update)
 
     if not is_valid:
         logger.warning(f"User {user_id} tried to add inaccessible channel {channel}: {error_msg}")
@@ -1167,7 +536,7 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Add channel
     channels.append(channel)
-    await set_user_channels(user_id, channels)
+    await storage.set_user_channels(user_id, channels)
 
     logger.info(f"User {user_id} added channel {channel}.")
     user_logger.info(f"User_{user_id} (@{username}) specified /add {channel}")
@@ -1188,7 +557,7 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = context.args[0]
 
     # Get current user channels
-    channels = await get_user_channels(user_id)
+    channels = await storage.get_user_channels(user_id)
 
     # Check if channel exists in user's list
     if channel not in channels:
@@ -1197,7 +566,7 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Remove channel
     channels.remove(channel)
-    await set_user_channels(user_id, channels)
+    await storage.set_user_channels(user_id, channels)
 
     user_logger.info(f"User_{user_id} (@{username}) specified /remove {channel}")
     await update.message.reply_text(f"🗑️ {channel} был удален.")
@@ -1210,7 +579,7 @@ async def remove_all_channels(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_logger.info(f"User_{user_id} (@{username}) clicked /remove_all")
 
     # Get current user channels
-    channels = await get_user_channels(user_id)
+    channels = await storage.get_user_channels(user_id)
 
     if not channels:
         await update.message.reply_text("📭 У вас нет добавленных каналов.")
@@ -1218,7 +587,7 @@ async def remove_all_channels(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Remove all channels
     channel_count = len(channels)
-    await set_user_channels(user_id, [])
+    await storage.set_user_channels(user_id, [])
 
     await update.message.reply_text(f"🗑️ Все каналы ({channel_count}) были удалены.")
 
@@ -1240,7 +609,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if hours value is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /time (view current)")
-        current_time = await get_user_time_limit(user_id)
+        current_time = await storage.get_user_time_limit(user_id)
 
         # Format display: hours or days
         display = format_time_display(current_time)
@@ -1280,7 +649,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Set the new time limit
-        await set_user_time_limit(user_id, hours)
+        await storage.set_user_time_limit(user_id, hours)
         logger.info(f"User {user_id} set time limit to {hours} hours ({input_type}: {input_display}).")
         user_logger.info(f"User_{user_id} (@{username}) specified /time {context.args[0]}")
 
@@ -1310,7 +679,7 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if posts value is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /posts (view current)")
-        current_max = await get_user_max_posts(user_id)
+        current_max = await storage.get_user_max_posts(user_id)
         await update.message.reply_text(
             f"📊 Текущее количество новостей: {current_max}\n\n"
             f"Чтобы изменить, используйте: /posts <количество>\n"
@@ -1334,7 +703,7 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Set the new max posts
-        await set_user_max_posts(user_id, max_posts)
+        await storage.set_user_max_posts(user_id, max_posts)
         logger.info(f"User {user_id} set max posts to {max_posts}.")
         user_logger.info(f"User_{user_id} (@{username}) specified /posts {max_posts}")
 
@@ -1345,435 +714,6 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except ValueError:
         await update.message.reply_text("❌ Укажите корректное число. Например: /posts 10")
-
-
-def parse_subscriber_count(text: str) -> int:
-    """
-    Parse subscriber count text to integer.
-
-    Args:
-        text: Subscriber count string (e.g., "1.2M subscribers", "53K members", "987 subscribers")
-
-    Returns:
-        Integer count, or 0 if parsing fails
-    """
-    if not text:
-        return 0
-
-    try:
-        # Extract numeric part and suffix
-        text = text.strip().lower()
-
-        # Remove common words like "subscribers", "members", etc.
-        for word in ['subscribers', 'members', 'subscriber', 'member']:
-            text = text.replace(word, '')
-
-        # Remove extra spaces
-        text = text.strip()
-
-        # Handle millions (M)
-        if 'm' in text:
-            num_str = text.replace('m', '').strip()
-            num = float(num_str)
-            return int(num * 1_000_000)
-
-        # Handle thousands (K)
-        elif 'k' in text:
-            num_str = text.replace('k', '').strip()
-            num = float(num_str)
-            return int(num * 1_000)
-
-        # Handle plain numbers
-        else:
-            # Remove any remaining commas or spaces
-            num_str = text.replace(',', '').replace(' ', '')
-            return int(float(num_str))
-
-    except Exception as e:
-        logger.warning(f"Failed to parse subscriber count '{text}': {e}")
-        return 0
-
-
-async def scrape_channel(channel_name: str, time_limit_hours: int = DEFAULT_NEWS_TIME_LIMIT_HOURS) -> list:
-    """
-    Scrape recent posts from a public Telegram channel.
-
-    Args:
-        channel_name: Channel name (e.g., '@channelname')
-
-    Returns:
-        List of dictionaries with post data including:
-        - text: Full text content of the post
-        - channel: Channel name with @ prefix
-        - url: Direct URL to the post (e.g., https://t.me/channel/123)
-        - timestamp: Publication time as datetime object (timezone-aware)
-        - subscriber_count: Total subscriber count for the channel
-    """
-    # Remove @ if present
-    channel = channel_name.lstrip('@')
-    url = f"https://t.me/s/{channel}"
-
-    posts = []
-
-    # Calculate time cutoff (timezone-aware)
-    time_cutoff = datetime.now(timezone.utc) - timedelta(hours=time_limit_hours)
-
-    try:
-        http_client = await get_http_client()
-        response = await http_client.get(url, timeout=30.0)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Extract channel subscriber count
-        subscriber_count = 0
-        subscriber_elem = soup.find('div', class_='tgme_channel_info_counter')
-        if subscriber_elem:
-            subscriber_text = subscriber_elem.get_text(strip=True)
-            subscriber_count = parse_subscriber_count(subscriber_text)
-            logger.debug(f"Channel {channel_name} has {subscriber_count} subscribers")
-
-        # Find all post messages
-        message_widgets = soup.find_all('div', class_='tgme_widget_message')
-
-        post_count = 0
-        for message_widget in message_widgets:
-            if post_count >= MAX_POSTS_PER_CHANNEL:
-                break
-
-            # Extract post text
-            post_elem = message_widget.find('div', class_='tgme_widget_message_text')
-            if not post_elem:
-                continue
-
-            text = post_elem.get_text(strip=True)
-
-            # Remove all URLs from text (except t.me links which are post references)
-            import re
-            text = re.sub(r'https?://(?!t\.me/)[^\s]+', '', text)
-            text = re.sub(r'www\.[^\s]+', '', text)
-            text = ' '.join(text.split())  # Clean up extra whitespace
-
-            # Skip empty or very short posts
-            if len(text) < 50:
-                continue
-
-            # Extract unique post URL from data-post attribute
-            post_url = None
-            data_post = message_widget.get('data-post')
-            if data_post:
-                # data-post format is typically "channel_username/post_id"
-                post_url = f"https://t.me/{data_post}"
-
-            # Extract timestamp
-            post_timestamp = None
-            time_elem = message_widget.find('time')
-            if time_elem and time_elem.get('datetime'):
-                try:
-                    # Parse ISO format timestamp (e.g., "2025-10-07T10:30:00+00:00")
-                    post_time_str = time_elem['datetime']
-                    post_time = datetime.fromisoformat(post_time_str.replace('Z', '+00:00'))
-
-                    if post_time.tzinfo is None:
-                        logger.debug(f"Assuming UTC for naive timestamp in {channel_name}: {post_time_str}")
-                        post_time = post_time.replace(tzinfo=timezone.utc)
-
-                    # Store the datetime object for future use (timezone-aware)
-                    post_timestamp = post_time
-
-                    # Skip posts older than time limit (compare timezone-aware datetimes)
-                    if post_timestamp < time_cutoff:
-                        logger.debug(f"Skipping old post from {channel_name}: {post_timestamp} (cutoff: {time_cutoff})")
-                        continue
-                except Exception as e:
-                    logger.warning(f"Could not parse timestamp for post in {channel_name}: {e}")
-                    # Skip posts with unparseable timestamps to enforce time filter
-                    continue
-
-            if not post_timestamp:
-                logger.debug(f"Skipping post without timestamp from {channel_name}")
-                continue
-
-            posts.append({
-                'text': text,
-                'channel': channel_name,
-                'url': post_url,
-                'timestamp': post_timestamp,
-                'subscriber_count': subscriber_count
-            })
-            post_count += 1
-
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            logger.warning(f"Channel {channel_name} not found (404)")
-        else:
-            logger.warning(f"HTTP error scraping {channel_name}: {e.response.status_code}")
-    except httpx.TimeoutException:
-        logger.error(f"Timeout while scraping {channel_name}")
-    except Exception as e:
-        logger.error(f"Error scraping {channel_name}: {str(e)}", exc_info=True)
-
-    return posts
-
-
-async def get_embeddings(texts: list) -> list:
-    """
-    Get embeddings for a list of texts using Google's text-embedding model.
-
-    Args:
-        texts: List of text strings to embed
-
-    Returns:
-        List of embedding vectors (numpy arrays)
-    """
-    if not texts:
-        return []
-
-    try:
-        embeddings = []
-
-        # Process in batches to avoid API limits
-        batch_size = 100  # Google API allows up to 100 per batch
-
-        # Run embedding calls in thread pool to avoid blocking event loop
-        loop = asyncio.get_event_loop()
-
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-
-            # Use Google's embedding model in executor to prevent blocking
-            # Note: text-embedding-004 is the correct model name for Google's API
-            result = await loop.run_in_executor(
-                None,
-                lambda b=batch: genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=b,
-                    task_type="retrieval_document"
-                )
-            )
-
-            # Extract embeddings from result
-            for embedding in result['embedding']:
-                embeddings.append(np.array(embedding))
-
-        return embeddings
-
-    except Exception as e:
-        logger.error(f"Error getting embeddings: {str(e)}", exc_info=True)
-        return []
-
-
-async def cluster_posts(posts: list) -> list:
-    """
-    Cluster similar posts using DBSCAN and embeddings.
-
-    Args:
-        posts: List of post dictionaries with 'text' field
-
-    Returns:
-        List of clusters, where each cluster is a list of post dictionaries
-    """
-    if not posts:
-        return []
-
-    # Get embeddings for all posts
-    texts = [post['text'] for post in posts]
-    embeddings = await get_embeddings(texts)
-
-    if not embeddings or len(embeddings) != len(posts):
-        logger.warning("Failed to get embeddings")
-        return [[post] for post in posts]  # Return each post as its own cluster
-
-    # Create embedding matrix directly (avoid storing in posts to save memory)
-    embedding_matrix = np.array(embeddings)
-
-    # Configure and run DBSCAN
-    # eps = 1 - SIMILARITY_THRESHOLD (cosine distance from cosine similarity)
-    eps = 1 - SIMILARITY_THRESHOLD
-    min_samples = 2  # Minimum posts to form a cluster
-
-    # Initialize and fit DBSCAN
-    db = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine')
-    cluster_labels = db.fit_predict(embedding_matrix)
-
-    # Group posts by cluster label using defaultdict for efficiency
-    cluster_dict = defaultdict(list)
-    for post, label in zip(posts, cluster_labels):
-        cluster_dict[label].append(post)
-
-    # Build cluster list
-    clusters = []
-
-    # Add valid clusters (labels >= 0)
-    for label in sorted(cluster_dict.keys()):
-        if label >= 0:
-            clusters.append(cluster_dict[label])
-
-    # Add noise posts (label = -1) as single-item clusters
-    if -1 in cluster_dict:
-        clusters.extend([noise_post] for noise_post in cluster_dict[-1])
-
-    logger.info(f"DBSCAN clustering: {len(posts)} posts -> {len(clusters)} clusters (noise: {len(cluster_dict.get(-1, []))})")
-
-    return clusters
-
-
-def get_gemini_model():
-    """Get or create cached Gemini model instance."""
-    global _gemini_model
-    if _gemini_model is None:
-        _gemini_model = genai.GenerativeModel('gemini-flash-lite-latest')
-    return _gemini_model
-
-
-async def summarize_cluster(posts: list, retry_count: int = 3) -> dict:
-    """
-    Summarize a cluster of similar posts using Gemini.
-
-    Args:
-        posts: List of post dictionaries from the same story
-        retry_count: Number of retries for API calls (default: 3)
-
-    Returns:
-        Dictionary with 'headline' and 'summary' fields
-    """
-    if not posts:
-        return {'headline': '', 'summary': '', 'channels': []}
-
-    # Select the longest post as the most representative
-    representative_post = max(posts, key=lambda p: len(p['text']))
-
-    # Collect all channels that covered this story (using set for deduplication)
-    channels = list({post['channel'] for post in posts})
-
-    # Collect post URLs with their channels for creating links
-    post_links = [{'channel': post['channel'], 'url': post['url']}
-                  for post in posts if post.get('url')]
-
-    prompt = f"""Вы - краткий новостной аналитик. Ваша задача - обобщить новостной сюжет на основе следующего текста.
-
-Предоставьте:
-1. Один впечатляющий заголовок (максимум 15 слов)
-2. Краткое резюме ключевых фактов из 2-3 пунктов
-
-ВАЖНО: НЕ ВКЛЮЧАЙТЕ никаких ссылок или гиперссылок в заголовок и резюме. Используйте только обычный текст. Если в посте есть ссылка сделай ее простым текстом! Не превращайте слова, которые выглядят как домены (например: "x.ai", "X.AI", "OpenAI.com", Epoch.AI" и другие) в ссылки.
-
-Текст новости:
-{representative_post['text']}
-
-Формат ответа:
-ЗАГОЛОВОК: [ваш заголовок]
-
-РЕЗЮМЕ:
-• [первый ключевой факт]
-• [второй ключевой факт]
-• [третий ключевой факт, если необходимо]"""
-
-    # Configure generation parameters (reused across retries)
-    generation_config = genai.types.GenerationConfig(
-        temperature=0.3,
-        max_output_tokens=500,
-    )
-
-    # Configure safety settings to be less restrictive (reused across retries)
-    safety_settings = [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-
-    # Get cached model instance
-    model = get_gemini_model()
-
-    # Retry loop with exponential backoff
-    for attempt in range(retry_count):
-        try:
-            # Use semaphore to limit concurrent API calls
-            async with _gemini_semaphore:
-                # Generate content (run in thread pool since genai is synchronous)
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: model.generate_content(
-                        prompt,
-                        generation_config=generation_config,
-                        safety_settings=safety_settings
-                    )
-                )
-
-            # Check if response was blocked
-            if not response.candidates:
-                raise ValueError("Response was blocked by safety filters")
-
-            if response.candidates[0].finish_reason not in [1, 0]:  # 0=UNSPECIFIED, 1=STOP (normal)
-                raise ValueError(f"Response blocked with finish_reason: {response.candidates[0].finish_reason}")
-
-            content = response.text
-
-            # Check if content is None or empty
-            if not content:
-                raise ValueError("API returned empty response")
-
-            # Parse the response
-            lines = content.strip().split('\n')
-            headline = ''
-            summary_points = []
-
-            in_summary = False
-            for line in lines:
-                line = line.strip()
-                if line.startswith('ЗАГОЛОВОК:'):
-                    headline = line.replace('ЗАГОЛОВОК:', '').strip()
-                    # Remove ** markdown formatting from headline
-                    headline = headline.strip('*').strip()
-                elif line.startswith('РЕЗЮМЕ:'):
-                    in_summary = True
-                elif in_summary and line:  # Capture all non-empty lines after РЕЗЮМЕ
-                    summary_points.append(line)
-
-            summary = '\n'.join(summary_points)
-
-            return {
-                'headline': headline,
-                'summary': summary,
-                'channels': channels,
-                'post_links': post_links,
-                'count': len(posts)
-            }
-
-        except Exception as e:
-            is_last_attempt = (attempt == retry_count - 1)
-            logger.warning(f"Error summarizing cluster (attempt {attempt + 1}/{retry_count}): {str(e)}")
-
-            if is_last_attempt:
-                # All retries failed, log error and return fallback
-                logger.error(f"Failed to summarize cluster after {retry_count} attempts: {str(e)}", exc_info=True)
-                return {
-                    'headline': 'Ошибка обработки',
-                    'summary': representative_post['text'][:300] + '...',
-                    'channels': channels,
-                    'post_links': post_links,
-                    'count': len(posts)
-                }
-
-            # Calculate wait time with exponential backoff
-            wait_time = (2 ** attempt)  # Default: 1s, 2s, 4s
-
-            # Try to extract retry_delay from ResourceExhausted exception
-            if 'retry_delay' in str(e):
-                try:
-                    match = re.search(r'retry_delay\s*{\s*seconds:\s*(\d+)', str(e))
-                    if match:
-                        suggested_delay = int(match.group(1))
-                        # Use suggested delay but cap at 30 seconds to avoid excessive waiting
-                        wait_time = min(suggested_delay, 30)
-                        logger.info(f"API suggested retry delay: {suggested_delay}s, using {wait_time}s")
-                except Exception:
-                    pass  # Fall back to exponential backoff if parsing fails
-
-            logger.info(f"Retrying in {wait_time} seconds...")
-            await asyncio.sleep(wait_time)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1826,7 +766,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'time_interval':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Time Interval' button")
-        current_time = await get_user_time_limit(user_id)
+        current_time = await storage.get_user_time_limit(user_id)
 
         # Format display: hours or days
         display = format_time_display(current_time)
@@ -1842,7 +782,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'news_count':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Number of News' button")
-        current_max = await get_user_max_posts(user_id)
+        current_max = await storage.get_user_max_posts(user_id)
         await query.message.reply_text(
             f"📊 Текущее количество новостей: {current_max}\n\n"
             f"Чтобы изменить, введите количество (например: 10)\n"
@@ -1922,7 +862,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send immediate feedback
         processing_msg = await query.message.reply_text("⏳ Удаляю все каналы...")
 
-        channels = await get_user_channels(user_id)
+        channels = await storage.get_user_channels(user_id)
         reply_markup = create_return_menu_button()
 
         if not channels:
@@ -1932,7 +872,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             channel_count = len(channels)
-            await set_user_channels(user_id, [])
+            await storage.set_user_channels(user_id, [])
             await processing_msg.edit_text(
                 f"🗑️ Все каналы ({channel_count}) были удалены.",
                 reply_markup=reply_markup
@@ -1944,8 +884,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send immediate feedback
         processing_msg = await query.message.reply_text("⏳ Загружаю папки...")
 
-        active_folder = await get_active_folder_name(user_id)
-        folders = await get_user_folders(user_id)
+        active_folder = await storage.get_active_folder_name(user_id)
+        folders = await storage.get_user_folders(user_id)
         folder_count = len(folders)
 
         reply_markup = await create_folder_management_menu(user_id)
@@ -1965,7 +905,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send immediate feedback
         processing_msg = await query.message.reply_text(f"⏳ Переключаюсь на папку {folder_name}...")
 
-        if await switch_active_folder(user_id, folder_name):
+        if await storage.switch_active_folder(user_id, folder_name):
             reply_markup = await create_folder_management_menu(user_id)
             await processing_msg.edit_text(
                 f"✅ Переключено на папку: {folder_name}\n\n"
@@ -1987,7 +927,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'delete_folder':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Delete Folder' button")
-        folders = await get_user_folders(user_id)
+        folders = await storage.get_user_folders(user_id)
 
         if len(folders) == 1:
             reply_markup = await create_folder_management_menu(user_id)
@@ -2019,7 +959,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send immediate feedback
         processing_msg = await query.message.reply_text(f"⏳ Удаляю папку {folder_name}...")
 
-        if await delete_folder(user_id, folder_name):
+        if await storage.delete_folder(user_id, folder_name):
             reply_markup = await create_folder_management_menu(user_id)
             await processing_msg.edit_text(
                 f"✅ Папка '{folder_name}' удалена.",
@@ -2048,9 +988,9 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
         return WAITING_FOR_CHANNEL_ADD
 
     # Get current user channels (from active folder)
-    channels = await get_user_channels(user_id)
+    channels = await storage.get_user_channels(user_id)
     # Get all channels across all folders
-    all_channels = await get_all_user_channels(user_id)
+    all_channels = await storage.get_all_user_channels(user_id)
 
     # Check if channel already exists in ANY folder (no duplicates allowed)
     if channel in all_channels:
@@ -2071,7 +1011,7 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
     # Validate channel accessibility
-    is_valid, error_msg = await validate_channel_access(channel, update)
+    is_valid, error_msg = await scraper.validate_channel_access(channel, update)
 
     reply_markup = create_add_another_menu()
 
@@ -2085,7 +1025,7 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
 
     # Add channel
     channels.append(channel)
-    await set_user_channels(user_id, channels)
+    await storage.set_user_channels(user_id, channels)
 
     logger.info(f"User {user_id} added channel {channel}.")
     user_logger.info(f"User_{user_id} (@{username}) added channel {channel} via button")
@@ -2105,7 +1045,7 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
     channel = update.message.text.strip()
 
     # Get current user channels
-    channels = await get_user_channels(user_id)
+    channels = await storage.get_user_channels(user_id)
 
     # Check if channel exists in user's list
     if channel not in channels:
@@ -2118,7 +1058,7 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
 
     # Remove channel
     channels.remove(channel)
-    await set_user_channels(user_id, channels)
+    await storage.set_user_channels(user_id, channels)
 
     user_logger.info(f"User_{user_id} (@{username}) removed channel {channel} via button")
     reply_markup = create_remove_another_menu()
@@ -2166,7 +1106,7 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
             return ConversationHandler.END
 
         # Set the new time limit
-        await set_user_time_limit(user_id, hours)
+        await storage.set_user_time_limit(user_id, hours)
         logger.info(f"User {user_id} set time limit to {hours} hours ({input_type}: {input_display}).")
         user_logger.info(f"User_{user_id} (@{username}) set time to {input_value} via button")
 
@@ -2220,7 +1160,7 @@ async def handle_news_count_input(update: Update, context: ContextTypes.DEFAULT_
             return ConversationHandler.END
 
         # Set the new max posts
-        await set_user_max_posts(user_id, max_posts)
+        await storage.set_user_max_posts(user_id, max_posts)
         logger.info(f"User {user_id} set max posts to {max_posts}.")
         user_logger.info(f"User_{user_id} (@{username}) set posts to {max_posts} via button")
 
@@ -2258,7 +1198,7 @@ async def handle_new_folder_name(update: Update, context: ContextTypes.DEFAULT_T
         return WAITING_FOR_NEW_FOLDER_NAME
 
     # Create the folder
-    if await create_folder(user_id, folder_name):
+    if await storage.create_folder(user_id, folder_name):
         logger.info(f"User {user_id} created folder '{folder_name}'.")
         user_logger.info(f"User_{user_id} (@{username}) created folder '{folder_name}'")
 
@@ -2305,7 +1245,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
     user_logger.info(f"User_{user_id} (@{username}) clicked /news")
 
     # Load user data once to avoid multiple redundant loads
-    data = await load_user_data()
+    data = await storage.load_user_data()
     user_id_str = str(user_id)
     user_data = data.get(user_id_str, {})
 
@@ -2362,7 +1302,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
     if user_id_str in data:
         data[user_id_str]['last_news_date'] = today
         data[user_id_str]['news_request_count'] = news_request_count + 1
-        await save_user_data(data)
+        await storage.save_user_data(data)
     remaining -= 1
 
     # Send initial message or update processing message
@@ -2382,7 +1322,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
 
     try:
         # Step 1: Scrape all channels concurrently
-        scraping_tasks = [scrape_channel(channel, time_limit) for channel in channels]
+        scraping_tasks = [scraper.scrape_channel(channel, time_limit) for channel in channels]
         channel_posts = await asyncio.gather(*scraping_tasks)
 
         # Flatten the list of posts
@@ -2412,7 +1352,9 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         # Step 2: Cluster similar posts (async to avoid blocking)
-        clusters = await cluster_posts(all_posts)
+        texts = [post['text'] for post in all_posts]
+        embeddings = await ai_service.get_embeddings(texts)
+        clusters = clustering.cluster_posts(embeddings, all_posts)
 
         # Sort clusters by size (most covered stories first)
         clusters.sort(key=len, reverse=True)
@@ -2431,7 +1373,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         clusters_to_process = clusters[:max_posts]
 
         # Process all clusters in parallel
-        summary_tasks = [summarize_cluster(cluster) for cluster in clusters_to_process]
+        summary_tasks = [ai_service.summarize_cluster(cluster) for cluster in clusters_to_process]
         all_summaries = await asyncio.gather(*summary_tasks)
 
         # Filter out failed summaries (those without headlines)
@@ -2604,7 +1546,7 @@ async def handle_add_to_feed_channel(update: Update, context: ContextTypes.DEFAU
         return WAITING_FOR_ADD_TO_FEED_CHANNEL
 
     # Validate channel accessibility (same as main Add Channel feature)
-    is_valid, error_msg = await validate_channel_access(channel, update)
+    is_valid, error_msg = await scraper.validate_channel_access(channel, update)
 
     if not is_valid:
         logger.warning(f"User {user_id} tried to add inaccessible channel {channel}: {error_msg}")
@@ -2704,7 +1646,7 @@ async def handle_remove_from_feed_channel(update: Update, context: ContextTypes.
         return WAITING_FOR_REMOVE_FROM_FEED_CHANNEL
 
     # Check if channel is in feed
-    if not await check_channel_in_feed(channel):
+    if not await storage.check_channel_in_feed(channel):
         reply_markup = create_return_menu_button()
         await update.message.reply_text(
             f"❌ Канал {channel} не найден в ленте.",
@@ -2792,7 +1734,7 @@ async def handle_restrict_access_channel(update: Update, context: ContextTypes.D
         return WAITING_FOR_RESTRICT_ACCESS_CHANNEL
 
     # Validate channel accessibility (same as main Add Channel feature)
-    is_valid, error_msg = await validate_channel_access(channel, update)
+    is_valid, error_msg = await scraper.validate_channel_access(channel, update)
 
     if not is_valid:
         logger.warning(f"User {user_id} tried to add inaccessible channel {channel}: {error_msg}")
@@ -2868,7 +1810,7 @@ def main():
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_API)
-        .post_shutdown(close_http_client)
+        .post_shutdown(lambda _: scraper.close_http_client())
         .build()
     )
 
