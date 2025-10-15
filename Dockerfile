@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY bot.py .
+COPY bot/ ./bot/
 
 # Create directory for logs and data
 RUN mkdir -p /app/data

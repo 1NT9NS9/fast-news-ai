@@ -327,35 +327,37 @@ def main():
 
 ---
 
-## Phase 7: Integration & Testing (1-2 hours)
+## Phase 7: Integration & Testing (1-2 hours) ✅ PROGRAMMATIC TESTS COMPLETED
 
-### 7.1 Smoke Testing
-- [ ] Run bot: `python bot/main.py`
-- [ ] Test `/start` command
-- [ ] Test main menu buttons
-- [ ] Test `/manage` - create folder
-- [ ] Test `/manage` - add channel
+### 7.1 Automated Testing ✅
+- [x] Module imports verified (bot.main, all handlers, all services)
+- [x] Application creation test passed
+- [x] All services instantiate correctly (Storage, AI, Scraper, Clustering)
+- [x] ConversationHandler with 11 states registered
+- [x] Zero diagnostic errors (syntax, imports)
+- [x] Updated Dockerfile for modular structure
+- [x] Created comprehensive test documentation (PHASE7_TEST_RESULTS.md)
+
+### 7.2 Manual Testing Checklist (Requires Live Bot)
+The following tests require running the bot with Telegram:
+- [ ] Run bot: `python bot.py` or `python bot/main.py`
+- [ ] Test `/start` command - user initialization
+- [ ] Test main menu buttons (📰 News, ⚙️ Manage, ℹ️ Help)
+- [ ] Test `/manage` - create/rename/delete folders
+- [ ] Test `/manage` - add/remove channels
 - [ ] Test `/manage` - switch folder
-- [ ] Test `/news` command (full flow)
+- [ ] Test `/news` command (full scrape → cluster → summarize flow)
 - [ ] Test channel owner form submission
 - [ ] Test settings (time limit, max posts)
-
-### 7.2 Error Handling
-- [ ] Verify all error messages still display
-- [ ] Test rate limiting
+- [ ] Test rate limiting (5 requests/day)
 - [ ] Test invalid channel handling
 - [ ] Test API failures (Gemini timeout/error)
-
-### 7.3 Performance Validation
-- [ ] Verify button response times (instant feedback still works)
-- [ ] Verify backup debouncing still works
-- [ ] Check memory usage
-- [ ] Verify parallel processing still works
-
-### 7.4 Data Migration
+- [ ] Verify button response times (instant feedback)
+- [ ] Verify backup debouncing (60s interval)
 - [ ] Test with existing `user_data.json`
-- [ ] Verify old user data still loads
 - [ ] Test migration function
+
+**Note:** See `PHASE7_TEST_RESULTS.md` for detailed test plan and results
 
 ---
 
