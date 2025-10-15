@@ -3,6 +3,7 @@
 
 from bot.handlers.start import start_command, help_command, handle_return_to_menu
 from bot.handlers.news import news_command, news_command_internal
+from bot.handlers.log import log_command
 from bot.handlers.manage import (
     add_channel_command,
     remove_channel_command,
@@ -45,6 +46,7 @@ __all__ = [
     'handle_return_to_menu',
     'news_command',
     'news_command_internal',
+    'log_command',
     'add_channel_command',
     'remove_channel_command',
     'remove_all_channels_command',

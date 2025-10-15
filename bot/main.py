@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
 
-from bot.utils.config import TELEGRAM_BOT_API
+from bot.utils.config import TELEGRAM_BOT_API, ADMIN_CHAT_ID_LOG_INT
 from bot.utils.logger import setup_logging
 
 # Import all handlers
@@ -27,6 +27,7 @@ from bot.handlers import (
     time_command,
     posts_command,
     restore_backup_command,
+    log_command,
     # Conversation handlers
     button_callback,
     handle_add_channel_input,
@@ -58,8 +59,11 @@ from bot.handlers import (
 # Import services for cleanup
 from bot.services import ScraperService
 
-# Setup logging
-logger, user_logger = setup_logging()
+# Setup logging with optional Telegram notifications
+logger, user_logger = setup_logging(
+    bot_token=TELEGRAM_BOT_API,
+    admin_chat_id=ADMIN_CHAT_ID_LOG_INT
+)
 
 
 def create_application():
@@ -130,6 +134,7 @@ def create_application():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("restore_backup", restore_backup_command))
+    application.add_handler(CommandHandler("log", log_command))
     application.add_handler(conv_handler)
 
     # Keep old command handlers for backward compatibility

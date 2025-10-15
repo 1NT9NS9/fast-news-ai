@@ -21,7 +21,8 @@ pip install -r requirements.txt
 - `TELEGRAM_BOT_API` - Your Telegram bot token
 - `GEMINI_API` - Your Gemini API key
 - `ADMIN_CHAT_ID` - (Optional) Admin chat ID for channel owner forms (can be group/channel)
-- `ADMIN_CHAT_ID_BACKUP` - (Optional) Admin chat ID for backup restoration (must be personal chat)
+- `ADMIN_CHAT_ID_BACKUP` - (Optional) Admin chat ID for backup restoration and `/log` command access (must be personal chat)
+- `ADMIN_CHAT_ID_LOG` - (Optional) Admin chat ID for receiving ERROR/CRITICAL log notifications via Telegram
 
 **Run:**
 ```bash
@@ -39,6 +40,7 @@ bot/
 │   ├── start.py        # /start, /help commands
 │   ├── news.py         # /news command logic
 │   ├── manage.py       # /manage command and folder operations
+│   ├── log.py          # /log command (admin weekly statistics)
 │   └── buttons.py      # Button callback handlers
 ├── services/
 │   ├── storage.py      # File I/O and caching (StorageService)
@@ -89,7 +91,7 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 - `user_data.json` - User subscriptions, folders, and preferences (cached in memory)
 - `channel_feed.json` - Channel owner forms data
 - `bot.log` - Application logs
-- `bot_user.log` - User interaction logs
+- `bot_user.log` - User interaction logs (parsed by `/log` command for weekly statistics)
 
 **User data structure:**
 ```json
@@ -132,6 +134,7 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 - User data backups rotate with retention (debounced to prevent excessive I/O)
 - Migration paths carry version metadata for future schema changes
 - Auto-restore from newest valid backup if user data becomes corrupted
+- **Telegram log notifications** - ERROR/CRITICAL messages sent to admin chat for remote monitoring (configured via `ADMIN_CHAT_ID_LOG`)
 
 **Constraints:**
 - Russian language only
