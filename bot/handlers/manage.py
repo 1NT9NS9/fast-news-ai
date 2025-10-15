@@ -247,6 +247,10 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     channel = context.args[0]
 
+    # Normalize channel name: remove multiple @ symbols
+    while channel.startswith('@@'):
+        channel = channel[1:]
+
     # Validate channel format (should start with @)
     if not channel.startswith('@'):
         await update.message.reply_text("❌ Название канала должно начинаться с @")
@@ -544,6 +548,10 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
     channel = update.message.text.strip()
+
+    # Normalize channel name: remove multiple @ symbols
+    while channel.startswith('@@'):
+        channel = channel[1:]
 
     # Validate channel format (should start with @)
     if not channel.startswith('@'):

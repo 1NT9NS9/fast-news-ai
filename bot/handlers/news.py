@@ -128,7 +128,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         if not all_posts:
             if len(channels) == 1:
                 await status_message.edit_text(
-                    "This channel has no news for your time period."
+                    "На этом канале(ах) нет новостей за ваш временной период."
                 )
             else:
                 await status_message.edit_text(
