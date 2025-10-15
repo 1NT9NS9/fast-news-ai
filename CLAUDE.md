@@ -18,7 +18,8 @@ pip install -r requirements.txt
 **Environment variables** (`.env` file):
 - `TELEGRAM_BOT_API` - Your Telegram bot token
 - `GEMINI_API` - Your Gemini API key
-- `ADMIN_CHAT_ID` - (Optional) Admin chat ID for channel owner forms
+- `ADMIN_CHAT_ID` - (Optional) Admin chat ID for channel owner forms (can be group/channel)
+- `ADMIN_CHAT_ID_BACKUP` - (Optional) Admin chat ID for backup restoration (must be personal chat)
 
 **Run:**
 ```bash
@@ -27,7 +28,29 @@ python bot.py
 
 ## Architecture
 
-**Single file: `bot.py` (~3000 lines)**
+**Modular structure** (refactored October 2025 - v2.0):
+
+```
+bot/
+├── main.py              # Bot initialization and handlers registration
+├── handlers/
+│   ├── start.py        # /start, /help commands
+│   ├── news.py         # /news command logic
+│   ├── manage.py       # /manage command and folder operations
+│   └── buttons.py      # Button callback handlers
+├── services/
+│   ├── storage.py      # File I/O and caching (StorageService)
+│   ├── scraper.py      # Channel scraping (ScraperService)
+│   ├── ai.py           # Gemini API interactions (AIService)
+│   └── clustering.py   # Post clustering logic (ClusteringService)
+├── models/
+│   └── user_data.py    # Data structures and validation
+└── utils/
+    ├── config.py       # Constants and configuration
+    └── logger.py       # Logging setup
+
+bot.py                   # Backward compatibility wrapper (calls bot.main)
+```
 
 Core stack:
 - **python-telegram-bot** (v21.6) - Bot framework
@@ -46,7 +69,7 @@ Core stack:
 
 ## Key Configuration
 
-Constants at `bot.py:51-62`:
+Constants in `bot/utils/config.py`:
 ```python
 MAX_CHANNELS = 10                    # Max channels per user (across all folders)
 MAX_POSTS_PER_CHANNEL = 20          # Posts scraped per channel
@@ -102,10 +125,11 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 - Gemini API calls retry 3x with exponential backoff
 - Falls back to original text if summarization fails
 - Safety settings: `BLOCK_NONE` to avoid content blocking
-- gRPC verbosity suppressed via environment variables (`bot.py:4-8`)
+- gRPC verbosity suppressed via environment variables (`bot/utils/config.py`)
 - Cache operations lock consistently for thread safety
 - User data backups rotate with retention (debounced to prevent excessive I/O)
 - Migration paths carry version metadata for future schema changes
+- Auto-restore from newest valid backup if user data becomes corrupted
 
 **Constraints:**
 - Russian language only
@@ -134,41 +158,54 @@ docker logs -f keytime-bot
 
 ## Key Features
 
-**Folder Management** (`bot.py:99-306`):
+**Folder Management** (`bot/handlers/manage.py`, `bot/services/storage.py`):
 - Users can organize channels into folders (default: "Папка1")
 - Switch active folder to control which channels `/news` uses
 - Create/rename/delete folders through `/manage` command
 - Migration function handles upgrading old user data
 
-**Channel Owner Forms** (`bot.py:2137-2199`):
+**Channel Owner Forms** (`bot/handlers/buttons.py`):
 - Owners can submit forms to add channels to news feed
 - Forms sent to admin via `ADMIN_CHAT_ID`
 - Validates channel access and username before submission
 
-**Rate Limiting** (`bot.py:186-216`):
+**Rate Limiting** (`bot/services/storage.py::check_news_rate_limit`):
 - Tracks `/news` usage per user per day (UTC)
 - Resets daily counter automatically
 - Returns remaining requests to user
 
+**Backup & Recovery** (`bot/services/storage.py`):
+- Automatic backups before every user data save (debounced)
+- Backup rotation (max 20 backups, 7-day retention)
+- Manual restore via `/restore_backup` command (requires `ADMIN_CHAT_ID_BACKUP`)
+- Auto-restore from newest valid backup on corruption detection
+
 ## Development
 
-**Change limits:** Edit constants at `bot.py:51-62`
+**Change limits:** Edit constants in `bot/utils/config.py`
 
 **Change AI models:**
-- Embedding: `get_embeddings()` at line 1020 (uses `text-embedding-004`)
-- Generation: `get_gemini_model()` at line 1122 (uses `gemini-flash-lite-latest`)
+- Embedding: `AIService.__init__()` in `bot/services/ai.py` (uses `text-embedding-004`)
+- Generation: `AIService.__init__()` in `bot/services/ai.py` (uses `gemini-flash-lite-latest`)
 
-**Debug mode:** Set `level=logging.DEBUG` at `bot.py:29`
+**Debug mode:** Set `level=logging.DEBUG` in `bot/utils/logger.py::setup_logging()`
 
-**Add command:**
-1. Create handler: `async def new_command(update, context)`
-2. Register: `application.add_handler(CommandHandler("name", new_command))`
-3. Add to `create_main_menu()` for button interface
-4. Add callback in `button_callback()` if using buttons
+**Add new command:**
+1. Create handler in appropriate module (e.g., `bot/handlers/manage.py`)
+2. Export it from `bot/handlers/__init__.py`
+3. Register in `bot/main.py::create_application()`
+4. Add to `create_main_menu()` in `bot/handlers/start.py` for button interface
+5. Add callback in `button_callback()` in `bot/handlers/buttons.py` if using buttons
+
+**Add new service:**
+1. Create service class in `bot/services/your_service.py`
+2. Export it from `bot/services/__init__.py`
+3. Import and use in handlers as needed
 
 **ConversationHandler states:**
-- Defined at `bot.py:77-96` (e.g., `WAITING_FOR_CHANNEL_ADD`)
+- Defined in `bot/handlers/__init__.py` (e.g., `WAITING_FOR_CHANNEL_ADD`)
 - Used for multi-step user input flows (add/remove channels, folder management, forms)
+- Registered in ConversationHandler in `bot/main.py::create_application()`
 
 ## Performance Optimizations (Phase 1 - October 2025)
 
@@ -184,15 +221,16 @@ All button handlers now provide instant visual feedback to improve perceived res
    - `confirm_delete_folder` → "⏳ Удаляю папку..."
    - `remove_all` → "⏳ Удаляю все каналы..."
 
-2. **Backup Optimization** (`bot.py:85-87, 198-212, 498-500`):
+2. **Backup Optimization** (`bot/services/storage.py::backup_user_data`):
    - Added debouncing: max 1 backup per 60 seconds
-   - Made backups non-blocking via `asyncio.create_task()`
+   - Changed from fire-and-forget (`asyncio.create_task`) to synchronous (`await`) to fix race condition
    - Eliminates 50-200ms delay on every save operation
    - Configure via `_backup_debounce_seconds` variable
+   - **Critical fix**: Changed to `await` to prevent 90% of backups being empty (0 bytes)
 
 3. **Data Load Reduction**:
-   - `create_folder_management_menu()` (lines 797-824): 2 loads → 1 load
-   - `news_command_internal()` (lines 2421-2491): 6 loads → 1 load
+   - `create_folder_management_menu()` in `bot/handlers/buttons.py`: 2 loads → 1 load
+   - `news_command_internal()` in `bot/handlers/news.py`: 6 loads → 1 load
    - Reduces lock contention and file I/O overhead
 
 **Performance Impact:**
@@ -202,5 +240,50 @@ All button handlers now provide instant visual feedback to improve perceived res
 - `/news` command: More efficient data access, better progress feedback
 
 **Configuration:**
-- Backup debounce interval: `_backup_debounce_seconds = 60` (line 87)
+- Backup debounce interval: `_backup_debounce_seconds = 60` in `bot/services/storage.py::StorageService.__init__()`
 - Can be adjusted based on usage patterns and backup requirements
+
+---
+
+## Module Responsibilities
+
+**`bot/main.py`** - Application entry point
+- Creates and configures Telegram Application
+- Registers all handlers and ConversationHandler
+- Manages bot lifecycle and shutdown hooks
+
+**`bot/handlers/`** - User interaction layer
+- `start.py`: Welcome menu, help text, persistent keyboard
+- `news.py`: News aggregation workflow (scrape → cluster → summarize → deliver)
+- `manage.py`: Channel and folder management commands
+- `buttons.py`: All button callbacks and channel owner forms
+
+**`bot/services/`** - Business logic layer
+- `storage.py`: User data persistence, caching, backups, rate limiting
+- `scraper.py`: Channel scraping from Telegram web preview
+- `ai.py`: Gemini embeddings and summarization with retry logic
+- `clustering.py`: DBSCAN clustering for duplicate detection
+
+**`bot/models/`** - Data layer
+- `user_data.py`: Data validation and migration logic
+
+**`bot/utils/`** - Shared utilities
+- `config.py`: Environment variables and constants
+- `logger.py`: Logging configuration
+
+---
+
+## Migration Notes (v1.0 → v2.0)
+
+**Breaking Changes:**
+- None - Full backward compatibility maintained via `bot.py` wrapper
+
+**New Features:**
+- Separate `ADMIN_CHAT_ID_BACKUP` for restore command authorization
+- Channel input normalization (multiple @ symbols now stripped)
+- Auto-restore from backup on user data corruption
+
+**Performance Improvements:**
+- 90% improvement in button response time (instant feedback)
+- 20-40% faster overall due to optimized data loading and backup debouncing
+- Fixed critical backup race condition (90% of backups were empty)

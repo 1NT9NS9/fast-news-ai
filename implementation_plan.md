@@ -359,21 +359,21 @@ def main():
 
 ### 7.4 Manual Testing Checklist (Requires Live Bot)
 The following tests require running the bot with Telegram:
-- [ ] Run bot: `python bot.py` or `python bot/main.py`
-- [ ] Test `/start` command - user initialization
-- [ ] Test main menu buttons (📰 News, ⚙️ Manage, ℹ️ Help)
-- [ ] Test `/manage` - create/rename/delete folders
-- [ ] Test `/manage` - add/remove channels
-- [ ] Test `/manage` - switch folder
-- [ ] Test `/news` command (full scrape → cluster → summarize flow)
-- [ ] Test channel owner form submission
-- [ ] Test settings (time limit, max posts)
-- [ ] Test rate limiting (5 requests/day)
-- [ ] Test invalid channel handling
-- [ ] Test API failures (Gemini timeout/error)
-- [ ] Test with existing `user_data.json`
-- [ ] Test migration function
-- [ ] Test `/restore_backup` command with new ADMIN_CHAT_ID_BACKUP
+- [x] Run bot: `python bot.py` or `python bot/main.py`
+- [x] Test `/start` command - user initialization
+- [x] Test main menu buttons (📰 News, ⚙️ Manage, ℹ️ Help)
+- [x] Test `/manage` - create/rename/delete folders
+- [x] Test `/manage` - add/remove channels
+- [x] Test `/manage` - switch folder
+- [x] Test `/news` command (full scrape → cluster → summarize flow)
+- [x] Test channel owner form submission
+- [x] Test settings (time limit, max posts)
+- [x] Test rate limiting (5 requests/day)
+- [x] Test invalid channel handling
+- [x] Test API failures (Gemini timeout/error)
+- [x] Test with existing `user_data.json`
+- [x] Test migration function
+- [x] Test `/restore_backup` command with new ADMIN_CHAT_ID_BACKUP
 
 **Note:** See `PHASE7_TEST_RESULTS.md` for detailed test plan and results
 
