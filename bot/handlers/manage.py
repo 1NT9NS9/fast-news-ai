@@ -470,16 +470,16 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /restore_backup admin command."""
-    from bot.utils.config import ADMIN_CHAT_ID, ADMIN_CHAT_ID_INT
+    from bot.utils.config import ADMIN_CHAT_ID_BACKUP_INT
     from datetime import datetime
 
     storage = StorageService()
 
     user = update.effective_user
-    admin_id = ADMIN_CHAT_ID_INT
+    admin_id = ADMIN_CHAT_ID_BACKUP_INT
 
     if admin_id is None:
-        await update.message.reply_text('ADMIN_CHAT_ID is not configured. Set it in the environment to enable restores.')
+        await update.message.reply_text('ADMIN_CHAT_ID_BACKUP is not configured. Set it in the .env file to enable backup restoration.')
         return
 
     if user.id != admin_id:

@@ -20,6 +20,7 @@ os.environ['GRPC_POLL_STRATEGY'] = 'poll'
 TELEGRAM_BOT_API: str = os.getenv('TELEGRAM_BOT_API')
 GEMINI_API: str = os.getenv('GEMINI_API')
 ADMIN_CHAT_ID: str = os.getenv('ADMIN_CHAT_ID')  # Admin's Telegram chat ID for receiving forms
+ADMIN_CHAT_ID_BACKUP: str = os.getenv('ADMIN_CHAT_ID_BACKUP')  # Admin's chat ID for backup restoration
 
 # File paths
 USER_DATA_FILE: str = 'user_data.json'
@@ -32,11 +33,18 @@ BACKUP_RETENTION_DAYS: int = 7
 
 # Admin chat ID validation
 ADMIN_CHAT_ID_INT: int = None
+ADMIN_CHAT_ID_BACKUP_INT: int = None
+
 try:
     ADMIN_CHAT_ID_INT = int(ADMIN_CHAT_ID) if ADMIN_CHAT_ID else None
 except ValueError:
     # Logger not yet initialized, will be logged later
     ADMIN_CHAT_ID_INT = None
+
+try:
+    ADMIN_CHAT_ID_BACKUP_INT = int(ADMIN_CHAT_ID_BACKUP) if ADMIN_CHAT_ID_BACKUP else None
+except ValueError:
+    ADMIN_CHAT_ID_BACKUP_INT = None
 
 # Bot limits and constraints
 MAX_CHANNELS: int = 10
