@@ -25,6 +25,7 @@ user_data_backup_*.json
 channel_feed.json
 .claude/
 backups/
+bot.py.backup
 
 # Git
 .git/
@@ -35,6 +36,8 @@ backups/
 .idea/
 *.swp
 *.swo
+AGENTS.md
+CLAUDE.md
 
 # OS
 .DS_Store

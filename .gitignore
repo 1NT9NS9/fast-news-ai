@@ -27,6 +27,7 @@ user_data_backup_*.json
 channel_feed.json
 .claude/
 backups/
+bot.py.backup
 
 # IDE
 .vscode/
@@ -34,6 +35,8 @@ backups/
 *.swp
 *.swo
 *~
+AGENTS.md
+CLAUDE.md
 
 # OS
 .DS_Store
