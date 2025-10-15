@@ -28,6 +28,7 @@ channel_feed.json
 .claude/
 backups/
 bot.py.backup
+docs/
 
 # IDE
 .vscode/

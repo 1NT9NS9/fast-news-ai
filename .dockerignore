@@ -26,6 +26,7 @@ channel_feed.json
 .claude/
 backups/
 bot.py.backup
+docs/
 
 # Git
 .git/
@@ -46,8 +47,6 @@ Thumbs.db
 # Development documentation (exclude from Docker)
 CLAUDE.md
 AGENTS.md
-implementation_plan.md
-GIT_WORKFLOW.md
 
 # Docker
 Dockerfile
