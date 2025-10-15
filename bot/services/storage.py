@@ -107,9 +107,9 @@ class StorageService:
                 logger.error('Aborting save_user_data due to validation errors: %s', '; '.join(issues))
                 raise ValueError('User data failed validation; see logs for details.')
 
-            # Trigger backup in background (non-blocking, fire-and-forget)
+            # Backup BEFORE saving new data to avoid race condition
             if os.path.exists(USER_DATA_FILE):
-                asyncio.create_task(self.backup_user_data())
+                await self.backup_user_data()
 
             self._user_data_cache = data
             serialized = json.dumps(data, indent=2, ensure_ascii=False)

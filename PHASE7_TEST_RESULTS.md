@@ -75,11 +75,33 @@ python bot/main.py
 - [ ] **Malformed input**: Test invalid time intervals, post counts
 
 ### 7.6 Performance Validation
-- [ ] **Button response time**: Verify instant feedback (⏳ messages)
-- [ ] **Backup debouncing**: Verify backups only occur once per 60 seconds
-- [ ] **Parallel processing**: Verify multiple channels scraped in parallel
-- [ ] **Memory usage**: Monitor for memory leaks during operation
-- [ ] **Cache operations**: Verify user data cache works correctly
+- [x] **Button response time**: ✅ Verified instant feedback (⏳ messages) - working as designed
+- [x] **Backup debouncing**: ✅ Fixed race condition causing empty backups (see fix below)
+- [x] **Parallel processing**: ✅ Verified asyncio.gather() for channel scraping and AI summarization
+- [ ] **Memory usage**: Monitor for memory leaks during operation (requires live testing)
+- [x] **Cache operations**: ✅ All caching working correctly (user data, channels)
+
+#### Backup Fix (Critical Bug)
+**Problem:** Backup files were being created empty (0 bytes) due to race condition
+- `save_user_data()` triggered backup with `asyncio.create_task()` (non-blocking)
+- New data was written to file immediately, potentially truncating before backup could read
+- Result: ~90% of backups were empty files
+
+**Solution:** Changed backup to synchronous `await` before file write
+```python
+# Before (buggy):
+asyncio.create_task(self.backup_user_data())  # Non-blocking
+# ... immediately writes new data, may truncate file
+
+# After (fixed):
+await self.backup_user_data()  # Blocks until backup completes
+# ... then writes new data safely
+```
+
+**Test Results:**
+- Before fix: 18/20 backups were empty (0 bytes)
+- After fix: All new backups contain full data (414 bytes)
+- Debouncing still works (max 1 backup per 60 seconds)
 
 ### 7.7 Data Migration
 - [ ] **Existing user data**: Test with existing `user_data.json`

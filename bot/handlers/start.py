@@ -24,10 +24,10 @@ def create_main_menu():
     """Create the main menu keyboard with folder management."""
     keyboard = [
         [InlineKeyboardButton("📰 Получить новости", callback_data='get_news')],
+        [InlineKeyboardButton("📁 Управление папками", callback_data='manage_folders')],
         [InlineKeyboardButton("➕ Добавить канал", callback_data='add_channel'), InlineKeyboardButton("➖ Удалить канал", callback_data='remove_channel')],
         [InlineKeyboardButton("📋 Список каналов", callback_data='list_channels')],
         [InlineKeyboardButton("⏰ Временной диапазон", callback_data='time_interval'), InlineKeyboardButton("📊 Количество новостей", callback_data='news_count')],
-        [InlineKeyboardButton("📁 Управление папками", callback_data='manage_folders')],
         [InlineKeyboardButton("🔥Лента новостей", callback_data='news_feed')],
         [InlineKeyboardButton("⭐️ Для владельцев каналов", callback_data='for_channel_owners')],
         [InlineKeyboardButton("🗑️ Удалить все каналы", callback_data='remove_all')]
