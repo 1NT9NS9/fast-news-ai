@@ -23,6 +23,7 @@ def create_persistent_keyboard():
 def create_main_menu():
     """Create the main menu keyboard with folder management."""
     keyboard = [
+        [InlineKeyboardButton("✨ Начать", callback_data='start_plans')],
         [InlineKeyboardButton("📰 Получить новости", callback_data='get_news')],
         [InlineKeyboardButton("📁 Управление папками", callback_data='manage_folders')],
         [InlineKeyboardButton("➕ Добавить канал", callback_data='add_channel'), InlineKeyboardButton("➖ Удалить канал", callback_data='remove_channel')],

@@ -26,9 +26,11 @@ ADMIN_CHAT_ID_LOG: str = os.getenv('ADMIN_CHAT_ID_LOG')  # Admin's chat ID for r
 # File paths
 USER_DATA_FILE: str = 'user_data.json'
 CHANNEL_FEED_FILE: str = 'channel_feed.json'
+PLAN_SUBSCRIPTIONS_FILE: str = 'plan_subscriptions.json'
 USER_DATA_BACKUP_DIR: str = os.path.join('backups', 'user_data')
 
 # Backup settings
+BACKUP_DEBOUNCE_SECONDS: int = 60  # Minimum interval between backups (in seconds)
 MAX_BACKUP_COUNT: int = 20
 BACKUP_RETENTION_DAYS: int = 7
 

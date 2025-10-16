@@ -41,7 +41,7 @@ bot/
 │   ├── news.py         # /news command logic
 │   ├── manage.py       # /manage command and folder operations
 │   ├── log.py          # /log command (admin weekly statistics)
-│   └── buttons.py      # Button callback handlers
+│   └── buttons.py      # Button callbacks (includes plan subscriptions)
 ├── services/
 │   ├── storage.py      # File I/O and caching (StorageService)
 │   ├── scraper.py      # Channel scraping (ScraperService)
@@ -90,6 +90,7 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 
 - `user_data.json` - User subscriptions, folders, and preferences (cached in memory)
 - `channel_feed.json` - Channel owner forms data
+- `plan_subscriptions.json` - Plan upgrade requests (Plus/Pro/Enterprise)
 - `bot.log` - Application logs
 - `bot_user.log` - User interaction logs (parsed by `/log` command for weekly statistics)
 
@@ -145,6 +146,11 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 - Rate limit: 5 `/news` per user per day (UTC)
 - Max 10 channels per user (across all folders)
 - Timestamps normalized to UTC; posts without timestamps are dropped
+
+**Plan Subscriptions:**
+- "✨ Start" button in main menu shows plan tiers (Free/Plus/Pro/Enterprise)
+- Plan upgrade requests saved to `plan_subscriptions.json` with user_id, username, plan, timestamp
+- Handlers: `bot/handlers/buttons.py:204-220` (start_plans), `367-379` (plan selection)
 
 ## Docker
 

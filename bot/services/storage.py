@@ -18,8 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
 
 from bot.utils.config import (
-    USER_DATA_FILE, CHANNEL_FEED_FILE, USER_DATA_BACKUP_DIR,
-    MAX_BACKUP_COUNT, BACKUP_RETENTION_DAYS,
+    USER_DATA_FILE, CHANNEL_FEED_FILE, PLAN_SUBSCRIPTIONS_FILE, USER_DATA_BACKUP_DIR,
+    MAX_BACKUP_COUNT, BACKUP_RETENTION_DAYS, BACKUP_DEBOUNCE_SECONDS,
     DEFAULT_NEWS_TIME_LIMIT_HOURS, DEFAULT_MAX_SUMMARY_POSTS,
     MAX_NEWS_REQUESTS_PER_DAY
 )
@@ -43,7 +43,7 @@ class StorageService:
 
         # Backup debouncing - track last backup time to avoid excessive backups
         self._last_backup_time = 0
-        self._backup_debounce_seconds = 60  # Max 1 backup per minute
+        self._backup_debounce_seconds = BACKUP_DEBOUNCE_SECONDS
 
     # ========================================================================
     # User Data - Core Operations
@@ -381,6 +381,46 @@ class StorageService:
         """Check if a channel is in the feed."""
         feed_data = await self.load_channel_feed()
         return channel_name in feed_data
+
+    # ========================================================================
+    # Plan Subscriptions Operations
+    # ========================================================================
+
+    async def load_plan_subscriptions(self) -> List[Dict]:
+        """Load plan subscription requests from JSON file."""
+        try:
+            async with aiofiles.open(PLAN_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
+                content = await f.read()
+        except FileNotFoundError:
+            return []
+        except OSError:
+            return []
+
+        if not content:
+            return []
+
+        try:
+            data = json.loads(content)
+            return data if isinstance(data, list) else []
+        except json.JSONDecodeError:
+            return []
+
+    async def save_plan_subscription(self, user_id: int, username: str, plan_type: str) -> None:
+        """Save a plan subscription request to JSON file."""
+        subscriptions = await self.load_plan_subscriptions()
+
+        subscription_data = {
+            'user_id': user_id,
+            'username': username,
+            'plan': plan_type,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+
+        subscriptions.append(subscription_data)
+
+        serialized = json.dumps(subscriptions, indent=2, ensure_ascii=False)
+        async with aiofiles.open(PLAN_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
+            await f.write(serialized)
 
     # ========================================================================
     # Backup Operations

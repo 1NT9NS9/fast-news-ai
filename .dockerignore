@@ -23,6 +23,7 @@ bot_user.log
 user_data.json
 user_data_backup_*.json
 channel_feed.json
+plan_subscriptions.json
 .claude/
 backups/
 bot.py.backup

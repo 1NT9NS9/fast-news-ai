@@ -37,6 +37,7 @@ WAITING_FOR_RESTRICT_ACCESS_REASON = 11
 def create_main_menu():
     """Create the main menu keyboard with folder management."""
     keyboard = [
+        [InlineKeyboardButton("✨ Начать", callback_data='start_plans')],
         [InlineKeyboardButton("📰 Получить новости", callback_data='get_news')],
         [InlineKeyboardButton("📁 Управление папками", callback_data='manage_folders')],
         [InlineKeyboardButton("➕ Добавить канал", callback_data='add_channel'), InlineKeyboardButton("➖ Удалить канал", callback_data='remove_channel')],
@@ -63,6 +64,17 @@ def create_channel_owner_menu():
         [InlineKeyboardButton("➕ Добавить канал в ленту", callback_data='add_to_feed')],
         [InlineKeyboardButton("➖ Удалить канал из ленты", callback_data='remove_from_feed')],
         [InlineKeyboardButton("🚫 Ограничить доступ", callback_data='restrict_access')],
+        [InlineKeyboardButton("🏠 Вернуться в меню", callback_data='return_to_menu')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def create_plans_menu():
+    """Create keyboard for subscription plans."""
+    keyboard = [
+        [InlineKeyboardButton("Подключить Plus (1000 руб/месяц)", callback_data='connect_plus')],
+        [InlineKeyboardButton("Подключить Pro (2000 руб/месяц)", callback_data='connect_pro')],
+        [InlineKeyboardButton("Подключить Enterprise", callback_data='connect_enterprise')],
         [InlineKeyboardButton("🏠 Вернуться в меню", callback_data='return_to_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -186,6 +198,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         reply_markup = create_main_menu()
         await query.message.reply_text(welcome_message, reply_markup=reply_markup)
+        return ConversationHandler.END
+
+    elif query.data == 'start_plans':
+        user_logger.info(f"User_{user_id} (@{username}) clicked 'Start' button")
+        reply_markup = create_plans_menu()
+
+        plans_message = (
+            "Нажмите в главном меню <📰 Получить новости>\n\n" 
+            "Ваш тариф: Free\n\n"
+            "Тарифы:\n"
+            "• Free: 10 каналов | 2 папки | 3 /news в день | время 1ч-7д\n"
+            "• Plus: 25 каналов | 3 папки | 4 /news в день | время 1ч-1м\n"
+            "• Pro:  50 каналов | 5 папок | 5 /news в день | время 1ч-2м\n"
+            "• Enterprise: Хотите увеличить временной интервал или другие параметры, напишите @fast_news_ai_admin"
+        )
+
+        await query.message.reply_text(plans_message, reply_markup=reply_markup)
         return ConversationHandler.END
 
     elif query.data == 'add_channel':
@@ -331,6 +360,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🗑️ Все каналы ({channel_count}) были удалены.",
                 reply_markup=reply_markup
             )
+        return ConversationHandler.END
+
+    elif query.data in ['connect_plus', 'connect_pro', 'connect_enterprise']:
+        plan_name = query.data.replace('connect_', '').capitalize()
+        user_logger.info(f"User_{user_id} (@{username}) clicked '{plan_name}' plan button")
+
+        # Save subscription request to JSON
+        await storage.save_plan_subscription(user_id, username, plan_name)
+
+        reply_markup = create_return_menu_button()
+        await query.message.reply_text(
+            "Спасибо за ваш выбор! С вами скоро свяжется менеджер.",
+            reply_markup=reply_markup
+        )
         return ConversationHandler.END
 
     elif query.data == 'manage_folders':
