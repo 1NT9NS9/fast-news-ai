@@ -13,6 +13,7 @@ __pycache__/
 # Environment files
 .env
 .env.local
+.env.example
 
 # Logs
 *.log
@@ -38,8 +39,6 @@ docs/
 .idea/
 *.swp
 *.swo
-AGENTS.md
-CLAUDE.md
 
 # OS
 .DS_Store

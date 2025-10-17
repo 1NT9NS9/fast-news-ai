@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -18,11 +18,18 @@ pip install -r requirements.txt
 ```
 
 **Environment variables** (`.env` file):
-- `TELEGRAM_BOT_API` - Your Telegram bot token
-- `GEMINI_API` - Your Gemini API key
-- `ADMIN_CHAT_ID` - (Optional) Admin chat ID for channel owner forms (can be group/channel)
-- `ADMIN_CHAT_ID_BACKUP` - (Optional) Admin chat ID for backup restoration and `/log` command access (must be personal chat)
-- `ADMIN_CHAT_ID_LOG` - (Optional) Admin chat ID for receiving ERROR/CRITICAL log notifications via Telegram
+- `TELEGRAM_BOT_API` - Telegram bot token (required)
+- `GEMINI_API` - Gemini API key (required)
+- `ADMIN_CHAT_ID` - Optional admin chat ID for forms (group or channel)
+- `ADMIN_CHAT_ID_BACKUP` - Optional admin chat ID for backup restoration and `/log`
+- `ADMIN_CHAT_ID_LOG` - Optional admin chat ID for ERROR/CRITICAL log notifications
+- `GEMINI_EMBEDDING_MODEL` - Embedding model ID (`gemini-embedding-001` default)
+- `EMBEDDING_OUTPUT_DIM` - Embedding vector dimensionality (default 768; supports 1536/3072)
+- `EMBEDDING_TASK_TYPE` - Embedding task type (`retrieval_document` default)
+- `EMBEDDING_TEXTS_PER_BATCH` - Max texts per embedding batch (default 100)
+- `EMBEDDING_RPM` - Embedding requests per minute cap (default 60)
+- `EMBEDDING_MAX_TOKENS` - Approx token budget before truncation (default 450)
+- `GEMINI_EMBEDDING_CONCURRENT_LIMIT` - Semaphore limit for embedding calls (default 32)
 
 **Run:**
 ```bash
@@ -31,78 +38,84 @@ python bot.py
 
 ## Architecture
 
-**Modular structure** 
-
 ```
 bot/
-├── main.py              # Bot initialization and handlers registration
-├── handlers/
-│   ├── start.py        # /start, /help commands
-│   ├── news.py         # /news command logic
-│   ├── manage.py       # /manage command and folder operations
-│   ├── log.py          # /log command (admin weekly statistics)
-│   └── buttons.py      # Button callbacks (includes plan subscriptions)
-├── services/
-│   ├── storage.py      # File I/O and caching (StorageService)
-│   ├── scraper.py      # Channel scraping (ScraperService)
-│   ├── ai.py           # Gemini API interactions (AIService)
-│   └── clustering.py   # Post clustering logic (ClusteringService)
-├── models/
-│   └── user_data.py    # Data structures and validation
-└── utils/
-    ├── config.py       # Constants and configuration
-    └── logger.py       # Logging setup
+- main.py              # Bot initialization and handler registration
+- handlers/
+  - start.py           # /start, /help commands
+  - news.py            # /news command logic
+  - manage.py          # /manage command and folder operations
+  - log.py             # /log command (admin weekly statistics)
+  - buttons.py         # Button callbacks (includes plan subscriptions)
+- services/
+  - storage.py         # File I/O and caching (StorageService)
+  - scraper.py         # Channel scraping (ScraperService)
+  - ai.py              # Gemini API interactions (AIService)
+  - clustering.py      # Post clustering logic (ClusteringService)
+- models/
+  - user_data.py       # Data structures and validation
+- utils/
+  - config.py          # Constants and configuration
+  - logger.py          # Logging setup
 
-bot.py                   # Backward compatibility wrapper (calls bot.main)
+bot.py                 # Backward compatibility wrapper (calls bot.main)
 ```
 
 Core stack:
-- **python-telegram-bot** (v21.6) - Bot framework
-- **google-generativeai** (v0.8.3) - AI embeddings (`text-embedding-004`) and generation (`gemini-flash-lite-latest`)
-- **scikit-learn** (v1.5.2) - DBSCAN clustering for grouping similar posts
-- **httpx + beautifulsoup4** - Scraping from `https://t.me/s/{channel_name}`
+- `python-telegram-bot` (21.6) - Telegram interface
+- `google-genai` (0.3.0) - Embedding client for `gemini-embedding-001`
+- `google-generativeai` (0.8.3) - Text generation (`gemini-flash-lite-latest`)
+- `scikit-learn` (1.5.2) - DBSCAN clustering and cosine similarity
+- `httpx` + `beautifulsoup4` - Scraping `https://t.me/s/{channel_name}`
+- `aiofiles`, `numpy`, `python-dotenv` - Async persistence, vector math, env loading
 
 ## How `/news` Works
 
-1. **Scrape** - Fetch posts from subscribed channels (parallel, max 20 posts/channel)
-2. **Embed** - Generate vector embeddings (batched, 100 at a time)
-3. **Cluster** - DBSCAN groups similar posts (0.9 similarity threshold)
-4. **Rank** - Sort by cluster size (most covered stories first)
-5. **Summarize** - AI generates summaries (parallel processing)
-6. **Deliver** - Send formatted summaries to user
+1. Scrape - Fetch posts from subscribed channels (parallel, max 20 posts/channel)
+2. Embed - Batch texts via `google.genai.Client` (configurable batch size and dimensions)
+3. Cluster - DBSCAN groups similar posts (0.9 similarity threshold)
+4. Rank - Sort clusters by size (most sources first)
+5. Summarize - Gemini Flash Lite summarizes clusters in parallel
+6. Deliver - Format and send digest to the user
 
 ## Key Configuration
 
 Constants in `bot/utils/config.py`:
 ```python
-MAX_CHANNELS = 10                    # Max channels per user (across all folders)
-MAX_POSTS_PER_CHANNEL = 20          # Posts scraped per channel
-DEFAULT_NEWS_TIME_LIMIT_HOURS = 24  # Default time range
-MAX_NEWS_TIME_LIMIT_HOURS = 720     # Max allowed time range (30 days)
-DEFAULT_MAX_SUMMARY_POSTS = 10      # Default summaries per /news
-MAX_SUMMARY_POSTS_LIMIT = 30        # Max allowed summaries
-MAX_NEWS_REQUESTS_PER_DAY = 5       # Daily rate limit per user
-SIMILARITY_THRESHOLD = 0.9          # DBSCAN clustering threshold
-GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
+MAX_CHANNELS = 10
+MAX_POSTS_PER_CHANNEL = 20
+DEFAULT_NEWS_TIME_LIMIT_HOURS = 24
+MAX_NEWS_TIME_LIMIT_HOURS = 720
+DEFAULT_MAX_SUMMARY_POSTS = 10
+MAX_SUMMARY_POSTS_LIMIT = 30
+MAX_NEWS_REQUESTS_PER_DAY = 5
+SIMILARITY_THRESHOLD = 0.9
+GEMINI_CONCURRENT_LIMIT = 4000
+GEMINI_EMBEDDING_CONCURRENT_LIMIT = 32
+EMBEDDING_TEXTS_PER_BATCH = 100
+EMBEDDING_RPM = 60
+EMBEDDING_MAX_TOKENS = 450
 ```
+
+AIService pulls model IDs (`GEMINI_EMBEDDING_MODEL`, `gemini-embedding-001` default) and output dimensions from config, truncates inputs using a 4 chars/token heuristic, and enforces RPM/semaphore limits per embedding call.
 
 ## Data Storage
 
-- `user_data.json` - User subscriptions, folders, and preferences (cached in memory)
-- `channel_feed.json` - Channel owner forms data
+- `user_data.json` - User subscriptions, folders, preferences (cached in memory)
+- `channel_feed.json` - Channel owner form submissions
 - `plan_subscriptions.json` - Plan upgrade requests (Plus/Pro/Enterprise)
 - `bot.log` - Application logs
-- `bot_user.log` - User interaction logs (parsed by `/log` command for weekly statistics)
+- `bot_user.log` - User interaction logs (parsed by `/log`)
 
-**User data structure:**
+User data snapshot:
 ```json
 {
-  "user_id": {
+  "123456": {
     "folders": {
-      "Папка1": ["@channel1", "@channel2"],
-      "Папка2": ["@channel3"]
+      "default": ["@channel1", "@channel2"],
+      "work": ["@channel3"]
     },
-    "active_folder": "Папка1",
+    "active_folder": "default",
     "time_limit": 24,
     "max_posts": 10,
     "news_requests": {"2025-10-11": 3}
@@ -110,47 +123,36 @@ GEMINI_CONCURRENT_LIMIT = 4000      # Max concurrent API calls
 }
 ```
 
-## Important Implementation Notes
+## Implementation Notes
 
-**Performance:**
-- In-memory cache for user data to reduce file I/O
-- Parallel scraping with `asyncio.gather()`
-- Batched embeddings and parallel summarization
-- Semaphore limits concurrent Gemini API calls (4000)
-- Folder channel counts reuse cached results
-- Async file I/O via `aiofiles` removes event-loop blocking
-- Shared `httpx.AsyncClient` pools connections for scraping/validation
-- **Button handlers optimized (Phase 1 - 2025-10-13):**
-  - Instant visual feedback on all button presses (⏳ messages)
-  - Backup operations debounced (max 1/minute) and non-blocking
-  - Redundant data loads eliminated in hot paths (`news_command_internal`, `create_folder_management_menu`)
-  - `/news` command reduced from 6 data loads to 1 load
+**Performance**
+- Async scraping and summarization via `asyncio.gather`
+- Batched embeddings (configurable size) to reduce API calls
+- In-memory caching for user data, channel counts, and AI client instances
+- Shared `httpx.AsyncClient` for connection pooling
+- Debounced backups (60s) and limited to 20 snapshots
 
-**Reliability:**
-- Gemini API calls retry 3x with exponential backoff
-- Falls back to original text if summarization fails
-- Safety settings: `BLOCK_NONE` to avoid content blocking
-- gRPC verbosity suppressed via environment variables (`bot/utils/config.py`)
-- Cache operations lock consistently for thread safety
-- User data backups rotate with retention (debounced to prevent excessive I/O)
-- Migration paths carry version metadata for future schema changes
-- Auto-restore from newest valid backup if user data becomes corrupted
-- **Telegram log notifications** - ERROR/CRITICAL messages sent to admin chat for remote monitoring (configured via `ADMIN_CHAT_ID_LOG`)
+**Reliability**
+- Embedding calls use RPM limiter + exponential backoff with server hint support
+- Summaries retry 3x; fall back to original text on failure
+- Safety settings configured to avoid blocking legitimate news
+- Auto-restore latest valid backup on JSON corruption
+- Admin log notifications via Telegram (if `ADMIN_CHAT_ID_LOG` set)
 
-**Constraints:**
-- Russian language only
-- Public channels only (scrapes web preview from `https://t.me/s/{channel}`)
-- Posts < 50 chars filtered out
-- Channel names must start with `@`
+**Constraints**
+- Russian-language focus
+- Public channels only (scrapes `https://t.me/s/{channel}`)
+- Posts shorter than 50 characters skipped
+- Channel IDs must start with `@`
 - Non-Telegram URLs removed from summaries
-- Rate limit: 5 `/news` per user per day (UTC)
-- Max 10 channels per user (across all folders)
-- Timestamps normalized to UTC; posts without timestamps are dropped
+- Rate limit: 5 `/news` requests per user per day (UTC)
+- Max 10 channels per user across all folders
 
-**Plan Subscriptions:**
-- "✨ Start" button in main menu shows plan tiers (Free/Plus/Pro/Enterprise)
-- Plan upgrade requests saved to `plan_subscriptions.json` with user_id, username, plan, timestamp
-- Handlers: `bot/handlers/buttons.py:204-220` (start_plans), `367-379` (plan selection)
+## Plan Subscriptions
+
+- "Start" menu includes plan tiers (Free/Plus/Pro/Enterprise)
+- Selections recorded in `plan_subscriptions.json` with user info and timestamp
+- Handled in `bot/handlers/buttons.py` (start_plans + plan selections)
 
 ## Docker
 

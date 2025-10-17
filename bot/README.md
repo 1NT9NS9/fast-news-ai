@@ -1,6 +1,6 @@
-# Bot Module Structure
+﻿# Bot Module Structure
 
-Modularized Telegram news aggregation bot (v2.0) - See `CLAUDE.md` for complete documentation.
+Modularized Telegram news aggregation bot (v2.0) - see `CLAUDE.md` for complete documentation.
 
 **Documentation:** [Architecture](../docs/ARCHITECTURE.md) | [Domain Model](../docs/DOMAIN.md) | [API Spec](../docs/API_SPEC.yaml)
 
@@ -8,22 +8,22 @@ Modularized Telegram news aggregation bot (v2.0) - See `CLAUDE.md` for complete 
 
 ```
 bot/
-├── main.py              # Bot initialization and handler registration
-├── handlers/            # User interaction layer
-│   ├── start.py        # /start, /help, menu
-│   ├── news.py         # /news workflow (scrape → embed → cluster → summarize)
-│   ├── manage.py       # Channel/folder management, settings
-│   └── buttons.py      # Button callbacks and forms
-├── services/            # Business logic
-│   ├── storage.py      # Data persistence, caching, backups (StorageService)
-│   ├── scraper.py      # Channel web scraping (ScraperService)
-│   ├── ai.py           # Gemini embeddings & summarization (AIService)
-│   └── clustering.py   # DBSCAN post clustering (ClusteringService)
-├── models/
-│   └── user_data.py    # Validation and migration
-└── utils/
-    ├── config.py       # Environment vars and constants
-    └── logger.py       # Logging setup
+- main.py              # Bot initialization and handler registration
+- handlers/            # User interaction layer
+  - start.py           # /start, /help, menu
+  - news.py            # /news workflow (scrape -> embed -> cluster -> summarize)
+  - manage.py          # Channel/folder management, settings
+  - buttons.py         # Button callbacks and forms
+- services/            # Business logic
+  - storage.py         # Data persistence, caching, backups (StorageService)
+  - scraper.py         # Channel web scraping (ScraperService)
+  - ai.py              # Gemini embeddings & summarization (AIService)
+  - clustering.py      # DBSCAN post clustering (ClusteringService)
+- models/
+  - user_data.py       # Validation and migration
+- utils/
+  - config.py          # Environment vars and constants
+  - logger.py          # Logging setup
 ```
 
 ## Core Services
@@ -40,9 +40,9 @@ bot/
 - Filters posts < 50 chars, normalizes timestamps to UTC
 
 ### AIService (`services/ai.py`)
-- Embeddings: `text-embedding-004` (batched, 100/batch)
-- Summarization: `gemini-flash-lite-latest` (temp 0.3, 500 tokens max)
-- Retry logic (3 attempts), rate limiting (4000 concurrent)
+- Embeddings: `gemini-embedding-001` via `google.genai.Client` (configurable 768/1536/3072 dims, 100 texts/batch default, RPM-governed with per-vector validation)
+- Summarization: `gemini-flash-lite-latest` through `google-generativeai` (temperature 0.3, 500 tokens max)
+- Separate semaphores, RPM limiter, and exponential backoff retries
 
 ### ClusteringService (`services/clustering.py`)
 - DBSCAN with cosine similarity (0.9 threshold)
@@ -55,6 +55,15 @@ bot/
 - `GEMINI_API` - Gemini key (required)
 - `ADMIN_CHAT_ID` - Forms destination (optional)
 - `ADMIN_CHAT_ID_BACKUP` - Backup restoration (optional)
+- `ADMIN_CHAT_ID_LOG` - Error/critical log notifications (optional)
+- `GEMINI_EMBEDDING_MODEL` - Embedding model ID (`gemini-embedding-001` default)
+- `EMBEDDING_OUTPUT_DIM` - Output dimensionality (default 768; supports 1536/3072)
+- `EMBEDDING_TASK_TYPE` - Embedding task type (`retrieval_document` default)
+- `EMBEDDING_TEXTS_PER_BATCH` - Texts per embedding batch (default 100)
+- `EMBEDDING_RPM` - Embedding requests per minute cap (default 60)
+- `EMBEDDING_MAX_TOKENS` - Token budget per text before truncation (default 450)
+- `GEMINI_EMBEDDING_CONCURRENT_LIMIT` - Semaphore limit for embedding calls (default 32)
+- Copy `.env.example` to `.env` and fill in the required keys before running the bot.
 
 **Key Limits:**
 - `MAX_CHANNELS = 10` (per user)
@@ -64,14 +73,21 @@ bot/
 
 ## `/news` Workflow
 
-1. Check rate limit (5/day) → 2. Get active folder channels → 3. Scrape (parallel) → 4. Embed (batched) → 5. Cluster (DBSCAN) → 6. Summarize (parallel) → 7. Format & send → 8. Increment counter
+1. Check rate limit (5/day)
+2. Load active folder channels
+3. Scrape channels in parallel
+4. Embed batched posts (configurable model/output dim)
+5. Cluster with DBSCAN and cosine similarity
+6. Summarize clusters in parallel
+7. Format and send digest to user
+8. Increment request counter
 
 ## Performance Optimizations
 
-- **Caching**: User data, channel counts, AI models
-- **Async I/O**: `aiofiles` for file operations, `httpx.AsyncClient` for scraping
-- **Parallel processing**: `asyncio.gather()` for scraping/summarization
-- **Button optimization**: Instant feedback (⏳), reduced data loads (1 vs 2-6)
+- Cache user data, channel counts, and AI clients
+- Async I/O via `aiofiles` and `httpx.AsyncClient`
+- Batched embeddings and parallel summarization
+- Immediate button feedback for snappy UX
 
 ## Development
 
@@ -92,4 +108,3 @@ backups = storage.list_user_data_backups()
 2. Add services to `services/`, export from `__init__.py`
 3. Update `utils/config.py` for new constants
 4. Update `CLAUDE.md` and add docstrings
-
