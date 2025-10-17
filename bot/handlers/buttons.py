@@ -371,7 +371,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply_markup = create_return_menu_button()
         await query.message.reply_text(
-            "Спасибо за ваш выбор! С вами скоро свяжется менеджер.",
+            "Спасибо за ваш выбор! Сейчас мы добавляем способ оплаты\n"
+            "Когда появиться возможность оплатить, мы отправим Вам сообщение",
             reply_markup=reply_markup
         )
         return ConversationHandler.END
