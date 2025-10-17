@@ -26,9 +26,9 @@ pip install -r requirements.txt
 - `GEMINI_EMBEDDING_MODEL` - Embedding model ID (`gemini-embedding-001` default)
 - `EMBEDDING_OUTPUT_DIM` - Embedding vector dimensionality (default 768; supports 1536/3072)
 - `EMBEDDING_TASK_TYPE` - Embedding task type (`retrieval_document` default)
-- `EMBEDDING_TEXTS_PER_BATCH` - Max texts per embedding batch (default 100)
-- `EMBEDDING_RPM` - Embedding requests per minute cap (default 60)
-- `EMBEDDING_MAX_TOKENS` - Approx token budget before truncation (default 450)
+- `EMBEDDING_TEXTS_PER_BATCH` - Max texts per embedding batch (default 50)
+- `EMBEDDING_RPM` - Embedding requests per minute cap (default 3000)
+- `EMBEDDING_MAX_TOKENS` - Approx token budget before truncation (default 400)
 - `GEMINI_EMBEDDING_CONCURRENT_LIMIT` - Semaphore limit for embedding calls (default 32)
 
 **Run:**
@@ -92,9 +92,9 @@ MAX_NEWS_REQUESTS_PER_DAY = 5
 SIMILARITY_THRESHOLD = 0.9
 GEMINI_CONCURRENT_LIMIT = 4000
 GEMINI_EMBEDDING_CONCURRENT_LIMIT = 32
-EMBEDDING_TEXTS_PER_BATCH = 100
-EMBEDDING_RPM = 60
-EMBEDDING_MAX_TOKENS = 450
+EMBEDDING_TEXTS_PER_BATCH = 50
+EMBEDDING_RPM = 3000
+EMBEDDING_MAX_TOKENS = 400
 ```
 
 AIService pulls model IDs (`GEMINI_EMBEDDING_MODEL`, `gemini-embedding-001` default) and output dimensions from config, truncates inputs using a 4 chars/token heuristic, and enforces RPM/semaphore limits per embedding call.

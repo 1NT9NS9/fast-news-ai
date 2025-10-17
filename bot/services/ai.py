@@ -52,7 +52,7 @@ class AIService:
         # Embedding model configuration
         self.embedding_model = GEMINI_EMBEDDING_MODEL
         self.embedding_task_type = EMBEDDING_TASK_TYPE
-        self.embedding_batch_size = EMBEDDING_TEXTS_PER_BATCH  # Google API allows up to 100 per batch
+        self.embedding_batch_size = EMBEDDING_TEXTS_PER_BATCH  # Google API allows up to 50 per batch
         self.embedding_output_dim = EMBEDDING_OUTPUT_DIM
         self.embedding_max_tokens = EMBEDDING_MAX_TOKENS
         self.embedding_rpm = EMBEDDING_RPM
