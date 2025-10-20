@@ -10,6 +10,27 @@ from typing import Dict, Set
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.services import messenger as messenger_service
+
+
+async def _send_reply(
+    update: Update,
+    text: str,
+    *,
+    reply_markup=None,
+    **kwargs,
+) -> None:
+    """Send a reply via the messenger wrapper."""
+    chat = update.effective_chat
+    if chat is None:
+        raise RuntimeError("Cannot send message without an active chat.")
+    send_kwargs = dict(kwargs)
+    if reply_markup is not None:
+        send_kwargs["reply_markup"] = reply_markup
+    if update.message is not None:
+        send_kwargs.setdefault("reply_to_message_id", update.message.message_id)
+    await messenger_service.send_text(chat.id, text, **send_kwargs)
+
 
 async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /log command - show weekly statistics from bot_user.log.
@@ -30,7 +51,8 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     admin_chat_id_backup = os.getenv('ADMIN_CHAT_ID_BACKUP')
 
     if not admin_chat_id_backup:
-        await update.message.reply_text(
+        await _send_reply(
+            update,
             "⚠️ Команда /log не настроена (ADMIN_CHAT_ID_BACKUP не указан в конфигурации)."
         )
         return
@@ -38,13 +60,15 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         admin_id = int(admin_chat_id_backup)
     except ValueError:
-        await update.message.reply_text(
+        await _send_reply(
+            update,
             "⚠️ Ошибка конфигурации: ADMIN_CHAT_ID_BACKUP имеет неверный формат."
         )
         return
 
     if user_id != admin_id:
-        await update.message.reply_text(
+        await _send_reply(
+            update,
             "🚫 У вас нет доступа к этой команде."
         )
         return
@@ -55,14 +79,16 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Format and send response
         message = _format_statistics(stats)
-        await update.message.reply_text(message, parse_mode='HTML')
+        await _send_reply(update, message, parse_mode='HTML')
 
     except FileNotFoundError:
-        await update.message.reply_text(
+        await _send_reply(
+            update,
             "⚠️ Файл bot_user.log не найден."
         )
     except Exception as e:
-        await update.message.reply_text(
+        await _send_reply(
+            update,
             f"❌ Ошибка при анализе логов: {str(e)}"
         )
 

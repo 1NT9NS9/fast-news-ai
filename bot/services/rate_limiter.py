@@ -133,13 +133,17 @@ class RateLimiter:
             heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
             self._queue_event.set()
 
-        try:
-            return await future
-        except asyncio.CancelledError:
-            if not future.done():
-                future.cancel()
-                await self._cancel_entry(entry)
-            raise
+        loop = self._ensure_loop()
+
+        def _on_future_done(fut: asyncio.Future[Any]) -> None:  # pragma: no cover - callback
+            if fut.cancelled():
+                loop.call_soon_threadsafe(
+                    asyncio.create_task,
+                    self._cancel_entry(entry),
+                )
+
+        future.add_done_callback(_on_future_done)
+        return future
 
     def can_send_global(self, now: float) -> bool:
         """Return True if another message can be sent at `now`."""

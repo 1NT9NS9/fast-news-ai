@@ -7,9 +7,29 @@ from telegram.ext import ContextTypes
 from bot.utils.config import DEFAULT_NEWS_TIME_LIMIT_HOURS, DEFAULT_MAX_SUMMARY_POSTS
 from bot.utils.logger import setup_logging
 from bot.services import StorageService
+from bot.services import messenger as messenger_service
 
 # Setup logging
 logger, user_logger = setup_logging()
+
+
+async def _send_reply(
+    update: Update,
+    text: str,
+    *,
+    reply_markup=None,
+    **kwargs,
+):
+    """Send a reply via the rate-limited messenger wrapper."""
+    chat = update.effective_chat
+    if chat is None:
+        raise RuntimeError("Cannot send message without an active chat.")
+    send_kwargs = dict(kwargs)
+    if reply_markup is not None:
+        send_kwargs["reply_markup"] = reply_markup
+    if update.message is not None:
+        send_kwargs.setdefault("reply_to_message_id", update.message.message_id)
+    return await messenger_service.send_text(chat.id, text, **send_kwargs)
 
 
 def create_persistent_keyboard():
@@ -76,8 +96,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     inline_markup = create_main_menu()
     persistent_markup = create_persistent_keyboard()
-    await update.message.reply_text(welcome_message, reply_markup=persistent_markup)
-    await update.message.reply_text("Выберите действие:", reply_markup=inline_markup)
+    await _send_reply(update, welcome_message, reply_markup=persistent_markup)
+    await _send_reply(update, "Выберите действие:", reply_markup=inline_markup)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,7 +121,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 🗑️ Удалить все каналы\n\n"
         "💡 Совет: Используйте /start для доступа к меню с кнопками!"
     )
-    await update.message.reply_text(help_text)
+    await _send_reply(update, help_text)
 
 
 async def handle_return_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,4 +136,4 @@ async def handle_return_to_menu(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     reply_markup = create_main_menu()
-    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+    await _send_reply(update, welcome_message, reply_markup=reply_markup)

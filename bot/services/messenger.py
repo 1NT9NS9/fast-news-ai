@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Sequence
 
 from telegram import Bot, InputMedia
@@ -39,13 +40,16 @@ async def send_text(
 ) -> Any:
     """Queue a text message for delivery."""
     bot, limiter = _require_components()
-    return await limiter.enqueue_send(
+    result = await limiter.enqueue_send(
         bot.send_message,
         chat_id=chat_id,
         args=(chat_id, text),
         kwargs=dict(kwargs),
         context=context,
     )
+    if isinstance(result, asyncio.Future):
+        return await result
+    return result
 
 
 async def send_photo(
@@ -57,13 +61,16 @@ async def send_photo(
 ) -> Any:
     """Queue a photo message for delivery."""
     bot, limiter = _require_components()
-    return await limiter.enqueue_send(
+    result = await limiter.enqueue_send(
         bot.send_photo,
         chat_id=chat_id,
         args=(chat_id, photo),
         kwargs=dict(kwargs),
         context=context,
     )
+    if isinstance(result, asyncio.Future):
+        return await result
+    return result
 
 
 async def send_document(
@@ -75,13 +82,16 @@ async def send_document(
 ) -> Any:
     """Queue a document for delivery."""
     bot, limiter = _require_components()
-    return await limiter.enqueue_send(
+    result = await limiter.enqueue_send(
         bot.send_document,
         chat_id=chat_id,
         args=(chat_id, document),
         kwargs=dict(kwargs),
         context=context,
     )
+    if isinstance(result, asyncio.Future):
+        return await result
+    return result
 
 
 async def send_media_group(
@@ -93,13 +103,16 @@ async def send_media_group(
 ) -> Any:
     """Queue a media group for delivery."""
     bot, limiter = _require_components()
-    return await limiter.enqueue_send(
+    result = await limiter.enqueue_send(
         bot.send_media_group,
         chat_id=chat_id,
         args=(chat_id, list(media)),
         kwargs=dict(kwargs),
         context=context,
     )
+    if isinstance(result, asyncio.Future):
+        return await result
+    return result
 
 
 def is_configured() -> bool:

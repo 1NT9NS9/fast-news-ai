@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.utils.config import MAX_CHANNELS, MAX_NEWS_TIME_LIMIT_HOURS, MAX_SUMMARY_POSTS_LIMIT
 from bot.utils.logger import setup_logging
 from bot.services import StorageService, ScraperService
+from bot.services import messenger as messenger_service
 
 # Setup logging
 logger, user_logger = setup_logging()
@@ -17,6 +18,28 @@ WAITING_FOR_CHANNEL_REMOVE = 2
 WAITING_FOR_TIME_INTERVAL = 3
 WAITING_FOR_NEWS_COUNT = 4
 WAITING_FOR_NEW_FOLDER_NAME = 12
+
+
+async def _reply_text(
+    update: Update,
+    text: str,
+    *,
+    reply_markup=None,
+    message_obj=None,
+    **kwargs,
+):
+    """Send text response through the messenger wrapper."""
+    chat = update.effective_chat
+    if chat is None:
+        raise RuntimeError("Cannot send message without an active chat.")
+    send_kwargs = dict(kwargs)
+    if reply_markup is not None:
+        send_kwargs["reply_markup"] = reply_markup
+    if message_obj is not None:
+        send_kwargs.setdefault("reply_to_message_id", message_obj.message_id)
+    elif update.message is not None:
+        send_kwargs.setdefault("reply_to_message_id", update.message.message_id)
+    return await messenger_service.send_text(chat.id, text, **send_kwargs)
 
 
 def create_add_another_menu():
@@ -145,10 +168,12 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
                 reply_markup=reply_markup or create_return_menu_button()
             )
         else:
-            await msg.reply_text(
+            await _reply_text(
+                update,
                 "📭 У вас нет добавленных каналов.\n"
                 "Используйте кнопку '➕ Добавить канал' для добавления.",
-                reply_markup=reply_markup or create_return_menu_button()
+                reply_markup=reply_markup or create_return_menu_button(),
+                message_obj=msg,
             )
         return
 
@@ -168,10 +193,12 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
                     reply_markup=reply_markup or create_return_menu_button()
                 )
             else:
-                await msg.reply_text(
+                await _reply_text(
+                    update,
                     "📭 У вас нет добавленных каналов.\n"
                     "Используйте кнопку '➕ Добавить канал' для добавления.",
-                    reply_markup=reply_markup or create_return_menu_button()
+                    reply_markup=reply_markup or create_return_menu_button(),
+                    message_obj=msg,
                 )
             return
 
@@ -192,9 +219,11 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
                 reply_markup=reply_markup or create_return_menu_button()
             )
         else:
-            await msg.reply_text(
+            await _reply_text(
+                update,
                 message,
-                reply_markup=reply_markup or create_return_menu_button()
+                reply_markup=reply_markup or create_return_menu_button(),
+                message_obj=msg,
             )
     else:
         # Fallback for old structure
@@ -207,10 +236,12 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
                     reply_markup=reply_markup or create_return_menu_button()
                 )
             else:
-                await msg.reply_text(
+                await _reply_text(
+                    update,
                     "📭 У вас нет добавленных каналов.\n"
                     "Используйте кнопку '➕ Добавить канал' для добавления.",
-                    reply_markup=reply_markup or create_return_menu_button()
+                    reply_markup=reply_markup or create_return_menu_button(),
+                    message_obj=msg,
                 )
         else:
             channel_list = "\n".join([f"{i+1}. {ch}" for i, ch in enumerate(channels)])
@@ -221,9 +252,11 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
                     reply_markup=reply_markup or create_return_menu_button()
                 )
             else:
-                await msg.reply_text(
+                await _reply_text(
+                    update,
                     message,
-                    reply_markup=reply_markup or create_return_menu_button()
+                    reply_markup=reply_markup or create_return_menu_button(),
+                    message_obj=msg,
                 )
 
 
@@ -242,7 +275,7 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Check if channel name is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /add (no channel specified)")
-        await update.message.reply_text("❌ Укажите название канала. Например: /add @channelname")
+        await _reply_text(update, "❌ Укажите название канала. Например: /add @channelname")
         return
 
     channel = context.args[0]
@@ -253,7 +286,7 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Validate channel format (should start with @)
     if not channel.startswith('@'):
-        await update.message.reply_text("❌ Название канала должно начинаться с @")
+        await _reply_text(update, "❌ Название канала должно начинаться с @")
         return
 
     # Get current user channels (from active folder)
@@ -263,12 +296,12 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Check if channel already exists in ANY folder (no duplicates allowed)
     if channel in all_channels:
-        await update.message.reply_text(f"ℹ️ {channel} уже добавлен в одну из Ваших папок.")
+        await _reply_text(update, f"ℹ️ {channel} уже добавлен в одну из Ваших папок.")
         return
 
     # Check channel limit (global across all folders)
     if len(all_channels) >= MAX_CHANNELS:
-        await update.message.reply_text(f"❌ Вы достигли максимального лимита в {MAX_CHANNELS} каналов.")
+        await _reply_text(update, f"❌ Вы достигли максимального лимита в {MAX_CHANNELS} каналов.")
         return
 
     # Validate channel accessibility
@@ -284,7 +317,7 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     logger.info(f"User {user_id} added channel {channel}.")
     user_logger.info(f"User_{user_id} (@{username}) specified /add {channel}")
-    await update.message.reply_text(f"✅ {channel} был добавлен.")
+    await _reply_text(update, f"✅ {channel} был добавлен.")
 
 
 async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,7 +330,7 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
     # Check if channel name is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /remove (no channel specified)")
-        await update.message.reply_text("❌ Укажите название канала. Например: /remove @channelname")
+        await _reply_text(update, "❌ Укажите название канала. Например: /remove @channelname")
         return
 
     channel = context.args[0]
@@ -307,7 +340,7 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
 
     # Check if channel exists in user's list
     if channel not in channels:
-        await update.message.reply_text(f"❌ {channel} не найден в вашем списке.")
+        await _reply_text(update, f"❌ {channel} не найден в вашем списке.")
         return
 
     # Remove channel
@@ -315,7 +348,7 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
     await storage.set_user_channels(user_id, channels)
 
     user_logger.info(f"User_{user_id} (@{username}) specified /remove {channel}")
-    await update.message.reply_text(f"🗑️ {channel} был удален.")
+    await _reply_text(update, f"🗑️ {channel} был удален.")
 
 
 async def remove_all_channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,14 +363,14 @@ async def remove_all_channels_command(update: Update, context: ContextTypes.DEFA
     channels = await storage.get_user_channels(user_id)
 
     if not channels:
-        await update.message.reply_text("📭 У вас нет добавленных каналов.")
+        await _reply_text(update, "📭 У вас нет добавленных каналов.")
         return
 
     # Remove all channels
     channel_count = len(channels)
     await storage.set_user_channels(user_id, [])
 
-    await update.message.reply_text(f"🗑️ Все каналы ({channel_count}) были удалены.")
+    await _reply_text(update, f"🗑️ Все каналы ({channel_count}) были удалены.")
 
 
 async def list_channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -364,7 +397,10 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format display: hours or days
         display = format_time_display(current_time)
 
-        await update.message.reply_text(
+        await _reply_text(
+
+
+            update,
             f"⏰ Текущий временной диапазон: {display}\n\n"
             f"Чтобы изменить, используйте:\n"
             f"• /time <часы> (например: /time 24)\n"
@@ -389,11 +425,13 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Validate hours
         if hours < 1:
-            await update.message.reply_text("❌ Временной диапазон должен быть больше 0.")
+            await _reply_text(update, "❌ Временной диапазон должен быть больше 0.")
             return
 
         if hours > MAX_NEWS_TIME_LIMIT_HOURS:
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней)."
             )
             return
@@ -409,13 +447,18 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             equivalent = input_display
 
-        await update.message.reply_text(
+        await _reply_text(
+
+
+            update,
             f"✅ Временной диапазон установлен: {equivalent}\n"
             f"Команда /news будет собирать новости за последние {equivalent.split('(')[0].strip()}."
         )
 
     except ValueError:
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             "❌ Укажите корректное значение.\n"
             "Примеры: /time 24 или /time 7d"
         )
@@ -432,7 +475,9 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /posts (view current)")
         current_max = await storage.get_user_max_posts(user_id)
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"📊 Текущее количество новостей: {current_max}\n\n"
             f"Чтобы изменить, используйте: /posts <количество>\n"
             f"Например: /posts 10\n"
@@ -445,11 +490,13 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Validate max_posts
         if max_posts < 1:
-            await update.message.reply_text("❌ Количество новостей должно быть больше 0.")
+            await _reply_text(update, "❌ Количество новостей должно быть больше 0.")
             return
 
         if max_posts > MAX_SUMMARY_POSTS_LIMIT:
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 f"❌ Количество новостей не может превышать {MAX_SUMMARY_POSTS_LIMIT}."
             )
             return
@@ -459,13 +506,16 @@ async def posts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"User {user_id} set max posts to {max_posts}.")
         user_logger.info(f"User_{user_id} (@{username}) specified /posts {max_posts}")
 
-        await update.message.reply_text(
+        await _reply_text(
+
+
+            update,
             f"✅ Количество новостей установлено: {max_posts}\n"
             f"Команда /news будет показывать до {max_posts} новостей."
         )
 
     except ValueError:
-        await update.message.reply_text("❌ Укажите корректное число. Например: /posts 10")
+        await _reply_text(update, "❌ Укажите корректное число. Например: /posts 10")
 
 
 async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -479,17 +529,17 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
     admin_id = ADMIN_CHAT_ID_BACKUP_INT
 
     if admin_id is None:
-        await update.message.reply_text('ADMIN_CHAT_ID_BACKUP is not configured. Set it in the .env file to enable backup restoration.')
+        await _reply_text(update, 'ADMIN_CHAT_ID_BACKUP is not configured. Set it in the .env file to enable backup restoration.')
         return
 
     if user.id != admin_id:
-        await update.message.reply_text('You are not authorized to use this command.')
+        await _reply_text(update, 'You are not authorized to use this command.')
         return
 
     backups = storage.list_user_data_backups()
 
     if not backups:
-        await update.message.reply_text('No backups are currently available.')
+        await _reply_text(update, 'No backups are currently available.')
         return
 
     if not context.args:
@@ -499,7 +549,7 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
             lines.append(f"{idx}. {backup['name']} (UTC {timestamp})")
         lines.append('')
         lines.append('Run `/restore_backup <number>` or `/restore_backup latest` to restore.')
-        await update.message.reply_text("\n".join(lines))
+        await _reply_text(update, "\n".join(lines))
         return
 
     choice = context.args[0].strip().lower()
@@ -509,11 +559,11 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
         try:
             selection_index = int(choice) - 1
         except ValueError:
-            await update.message.reply_text('Invalid selection. Use `/restore_backup` to see available backups.')
+            await _reply_text(update, 'Invalid selection. Use `/restore_backup` to see available backups.')
             return
 
     if selection_index < 0 or selection_index >= len(backups):
-        await update.message.reply_text('Selection out of range. Use `/restore_backup` to view options.')
+        await _reply_text(update, 'Selection out of range. Use `/restore_backup` to view options.')
         return
 
     selected = backups[selection_index]
@@ -521,17 +571,19 @@ async def restore_backup_command(update: Update, context: ContextTypes.DEFAULT_T
         await storage.restore_user_data_from_backup(selected['path'])
     except (FileNotFoundError, ValueError, OSError) as exc:
         logger.error('Failed restoring backup %s: %s', selected['path'], exc)
-        await update.message.reply_text(f'Failed to restore backup: {exc}')
+        await _reply_text(update, f'Failed to restore backup: {exc}')
         return
     except Exception as exc:
         logger.exception('Unexpected error while restoring backup %s', selected['path'])
-        await update.message.reply_text('Unexpected error occurred during restore.')
+        await _reply_text(update, 'Unexpected error occurred during restore.')
         return
 
     user_logger.info(f"Admin_{user.id} restored backup {selected['name']}")
     logger.info('Admin %s restored backup %s', user.id, selected['path'])
     timestamp = datetime.utcfromtimestamp(selected['mtime']).strftime('%Y-%m-%d %H:%M:%S')
-    await update.message.reply_text(
+    await _reply_text(
+
+        update,
         f"Backup {selected['name']} (UTC {timestamp}) restored successfully."
     )
 
@@ -555,7 +607,7 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
 
     # Validate channel format (should start with @)
     if not channel.startswith('@'):
-        await update.message.reply_text("❌ Название канала должно начинаться с @")
+        await _reply_text(update, "❌ Название канала должно начинаться с @")
         return WAITING_FOR_CHANNEL_ADD
 
     # Get current user channels (from active folder)
@@ -566,7 +618,9 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
     # Check if channel already exists in ANY folder (no duplicates allowed)
     if channel in all_channels:
         reply_markup = create_add_another_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"ℹ️ {channel} уже добавлен в одну из Ваших папок.",
             reply_markup=reply_markup
         )
@@ -576,7 +630,9 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
     if len(all_channels) >= MAX_CHANNELS:
         from bot.handlers.start import create_main_menu
         reply_markup = create_main_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"❌ Вы достигли максимального лимита в {MAX_CHANNELS} каналов.",
             reply_markup=reply_markup
         )
@@ -589,7 +645,9 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
 
     if not is_valid:
         logger.warning(f"User {user_id} tried to add inaccessible channel {channel}: {error_msg}")
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             "Выберите действие:",
             reply_markup=reply_markup
         )
@@ -602,7 +660,10 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
     logger.info(f"User {user_id} added channel {channel}.")
     user_logger.info(f"User_{user_id} (@{username}) added channel {channel} via button")
 
-    await update.message.reply_text(
+    await _reply_text(
+
+
+        update,
         "Выберите действие:",
         reply_markup=reply_markup
     )
@@ -624,7 +685,9 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
     # Check if channel exists in user's list
     if channel not in channels:
         reply_markup = create_remove_another_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"❌ {channel} не найден в вашем списке.",
             reply_markup=reply_markup
         )
@@ -636,7 +699,9 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
 
     user_logger.info(f"User_{user_id} (@{username}) removed channel {channel} via button")
     reply_markup = create_remove_another_menu()
-    await update.message.reply_text(
+    await _reply_text(
+
+        update,
         f"🗑️ {channel} был удален.",
         reply_markup=reply_markup
     )
@@ -667,7 +732,9 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
         # Validate hours
         if hours < 1:
             reply_markup = create_time_interval_menu()
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 "❌ Временной диапазон должен быть больше 0.",
                 reply_markup=reply_markup
             )
@@ -675,7 +742,9 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
 
         if hours > MAX_NEWS_TIME_LIMIT_HOURS:
             reply_markup = create_time_interval_menu()
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней).",
                 reply_markup=reply_markup
             )
@@ -693,7 +762,9 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
             equivalent = input_display
 
         reply_markup = create_time_interval_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"✅ Временной диапазон установлен: {equivalent}\n"
             f"Команда 'Получить новости' будет собирать новости за последние {equivalent.split('(')[0].strip()}.",
             reply_markup=reply_markup
@@ -701,7 +772,9 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
 
     except ValueError:
         reply_markup = create_time_interval_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             "❌ Укажите корректное значение.\n"
             "Примеры: 24 или 7d",
             reply_markup=reply_markup
@@ -723,7 +796,9 @@ async def handle_news_count_input(update: Update, context: ContextTypes.DEFAULT_
         # Validate max_posts
         if max_posts < 1:
             reply_markup = create_news_count_menu()
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 "❌ Количество новостей должно быть больше 0.",
                 reply_markup=reply_markup
             )
@@ -731,7 +806,9 @@ async def handle_news_count_input(update: Update, context: ContextTypes.DEFAULT_
 
         if max_posts > MAX_SUMMARY_POSTS_LIMIT:
             reply_markup = create_news_count_menu()
-            await update.message.reply_text(
+            await _reply_text(
+
+                update,
                 f"❌ Количество новостей не может превышать {MAX_SUMMARY_POSTS_LIMIT}.",
                 reply_markup=reply_markup
             )
@@ -743,7 +820,9 @@ async def handle_news_count_input(update: Update, context: ContextTypes.DEFAULT_
         user_logger.info(f"User_{user_id} (@{username}) set posts to {max_posts} via button")
 
         reply_markup = create_news_count_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"✅ Количество новостей установлено: {max_posts}\n"
             f"Команда 'Получить новости' будет показывать до {max_posts} новостей.",
             reply_markup=reply_markup
@@ -751,7 +830,9 @@ async def handle_news_count_input(update: Update, context: ContextTypes.DEFAULT_
 
     except ValueError:
         reply_markup = create_news_count_menu()
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             "❌ Укажите корректное число. Например: 10",
             reply_markup=reply_markup
         )
@@ -770,11 +851,11 @@ async def handle_new_folder_name(update: Update, context: ContextTypes.DEFAULT_T
 
     # Validate folder name
     if len(folder_name) == 0:
-        await update.message.reply_text("❌ Название папки не может быть пустым.")
+        await _reply_text(update, "❌ Название папки не может быть пустым.")
         return WAITING_FOR_NEW_FOLDER_NAME
 
     if len(folder_name) > 10:
-        await update.message.reply_text("❌ Название папки не может превышать 10 символов.")
+        await _reply_text(update, "❌ Название папки не может превышать 10 символов.")
         return WAITING_FOR_NEW_FOLDER_NAME
 
     # Create the folder
@@ -783,14 +864,18 @@ async def handle_new_folder_name(update: Update, context: ContextTypes.DEFAULT_T
         user_logger.info(f"User_{user_id} (@{username}) created folder '{folder_name}'")
 
         reply_markup = await create_folder_management_menu(user_id)
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"✅ Папка '{folder_name}' создана!\n\n"
             f"Вы можете переключиться на неё и добавлять каналы.",
             reply_markup=reply_markup
         )
     else:
         reply_markup = await create_folder_management_menu(user_id)
-        await update.message.reply_text(
+        await _reply_text(
+
+            update,
             f"❌ Папка '{folder_name}' уже существует.",
             reply_markup=reply_markup
         )
