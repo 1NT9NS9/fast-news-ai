@@ -18,6 +18,7 @@ async def _send_reply(
     text: str,
     *,
     reply_markup=None,
+    reply: bool = False,
     **kwargs,
 ):
     """Send a reply via the rate-limited messenger wrapper."""
@@ -27,7 +28,7 @@ async def _send_reply(
     send_kwargs = dict(kwargs)
     if reply_markup is not None:
         send_kwargs["reply_markup"] = reply_markup
-    if update.message is not None:
+    if reply and update.message is not None:
         send_kwargs.setdefault("reply_to_message_id", update.message.message_id)
     return await messenger_service.send_text(chat.id, text, **send_kwargs)
 
