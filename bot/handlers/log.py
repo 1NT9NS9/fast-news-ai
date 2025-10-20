@@ -4,13 +4,16 @@
 Provides /log command for admins to view weekly user activity statistics.
 """
 import os
+import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
-from typing import Dict, Set
+from typing import Any, Dict, List, Optional, Set
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.services import messenger as messenger_service
+
+logger = logging.getLogger(__name__)
 
 
 async def _send_reply(
@@ -76,9 +79,10 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Parse log file and collect statistics
     try:
         stats = await _parse_log_file()
+        queue_metrics = await _gather_queue_metrics()
 
         # Format and send response
-        message = _format_statistics(stats)
+        message = _format_statistics(stats, queue_metrics)
         await _send_reply(update, message, parse_mode='HTML')
 
     except FileNotFoundError:
@@ -152,6 +156,17 @@ async def _parse_log_file() -> Dict:
     }
 
 
+async def _gather_queue_metrics() -> Optional[Dict[str, Any]]:
+    """Fetch rate limiter queue metrics if available."""
+    if not messenger_service.is_configured():
+        return None
+    try:
+        return await messenger_service.get_queue_metrics()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("Failed to gather queue metrics: %s", exc)
+        return None
+
+
 def _normalize_action(action_text: str) -> str:
     """Normalize action text for grouping similar actions.
 
@@ -209,34 +224,31 @@ def _normalize_action(action_text: str) -> str:
     return action
 
 
-def _format_statistics(stats: Dict) -> str:
-    """Format statistics into a readable message.
+def _format_statistics(stats: Dict, queue_metrics: Optional[Dict[str, Any]] = None) -> str:
+    """Format statistics into a readable message."""
+    unique_users = stats["unique_users"]
+    actions = stats["actions"]
+    start_date, end_date = stats["date_range"]
 
-    Args:
-        stats: Statistics dict from _parse_log_file
+    sorted_actions = sorted(actions.items(), key=lambda item: item[1], reverse=True)
 
-    Returns:
-        Formatted HTML message
-    """
-    unique_users = stats['unique_users']
-    actions = stats['actions']
-    start_date, end_date = stats['date_range']
+    message_lines: List[str] = [
+        "<b>Weekly Usage Summary</b>",
+        f"Range: {start_date:%Y-%m-%d} - {end_date:%Y-%m-%d}",
+        "",
+        f"<b>Unique users:</b> {len(unique_users)}",
+    ]
 
-    # Sort actions by count (descending)
-    sorted_actions = sorted(actions.items(), key=lambda x: x[1], reverse=True)
+    if queue_metrics is not None:
+        message_lines.append("")
+        message_lines.extend(_format_queue_metrics(queue_metrics))
 
-    # Build message
-    message = f"📊 <b>Статистика за неделю</b>\n"
-    message += f"📅 {start_date.strftime('%Y-%m-%d')} — {end_date.strftime('%Y-%m-%d')}\n\n"
-
-    message += f"👥 <b>Уникальных пользователей:</b> {len(unique_users)}\n\n"
-
-    message += f"🔘 <b>Действия пользователей:</b>\n"
+    message_lines.append("")
+    message_lines.append("<b>Action counts:</b>")
 
     if not sorted_actions:
-        message += "<i>Нет данных</i>\n"
+        message_lines.append("<i>No actions recorded.</i>")
     else:
-        # Group actions by category for better readability
         commands = []
         buttons = []
         other_actions = []
@@ -249,26 +261,47 @@ def _format_statistics(stats: Dict) -> str:
             else:
                 buttons.append((action, count))
 
-        # Display commands
         if commands:
-            message += "\n<b>Команды:</b>\n"
+            message_lines.append("")
+            message_lines.append("<b>Commands</b>")
             for action, count in commands:
-                message += f"  • <code>{action}</code>: {count}\n"
+                message_lines.append(f"- <code>{action}</code>: {count}")
 
-        # Display buttons
         if buttons:
-            message += "\n<b>Кнопки:</b>\n"
+            message_lines.append("")
+            message_lines.append("<b>Buttons</b>")
             for action, count in buttons:
-                message += f"  • {action}: {count}\n"
+                message_lines.append(f"- {action}: {count}")
 
-        # Display other actions
         if other_actions:
-            message += "\n<b>Другие действия:</b>\n"
+            message_lines.append("")
+            message_lines.append("<b>Other actions</b>")
             for action, count in other_actions:
-                message += f"  • {action}: {count}\n"
+                message_lines.append(f"- {action}: {count}")
 
-    # Total actions
     total_actions = sum(actions.values())
-    message += f"\n<b>Всего действий:</b> {total_actions}"
+    message_lines.append("")
+    message_lines.append(f"<b>Total actions:</b> {total_actions}")
 
-    return message
+    return "\n".join(message_lines)
+
+
+def _format_queue_metrics(metrics: Dict[str, Any]) -> List[str]:
+    """Format rate limiter queue metrics for display."""
+    queue_depth = int(metrics.get("queue_depth", 0))
+    max_delay = float(metrics.get("max_delay_sec", 0.0))
+    avg_delay = float(metrics.get("avg_delay_sec", 0.0))
+    worst_chat = metrics.get("max_delay_chat_id")
+    worst_delay = float(metrics.get("max_delay_chat_sec", 0.0))
+
+    lines = ["<b>Queue Delay Metrics</b>"]
+    lines.append(f"- Queue depth: {queue_depth}")
+    lines.append(f"- Max delay: {max_delay:.2f}s")
+    lines.append(f"- Average delay: {avg_delay:.2f}s")
+
+    if queue_depth == 0 or worst_chat is None:
+        lines.append("- Highest per-chat delay: 0.00s")
+    else:
+        lines.append(f"- Highest per-chat delay: {worst_delay:.2f}s (chat {worst_chat})")
+
+    return lines

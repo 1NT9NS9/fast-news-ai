@@ -76,41 +76,44 @@ Notes
 - Route all outgoing text/media sends through messenger wrappers; preserve existing functionality.
 - Done: Compiles; digest sends are queued and rate-limited.
 
-[test] tests/ test_api_4.py - test_api_10.py, test_api_13.py - test_api_14.py[Complete]
+[test] tests/ test_api_4.py - test_api_10.py, test_api_13.py - test_api_14.py [Complete]
 
-15) Refactor manage handler
+15) Refactor manage handler [Complete]
 - File: `bot/handlers/manage.py`
 - Replace direct sends with messenger wrappers; ensure folder operations still respond promptly.
 - Done: Compiles; behavior unchanged except for rate control.
 
-16) Refactor start/log handlers
+16) Refactor start/log handlers [Complete]
 - Files: `bot/handlers/start.py`, `bot/handlers/log.py`
 - Replace direct sends with messenger wrappers; confirm admin log sends are queued.
 - Done: Both compile and run via queue.
 
-17) Add delay metrics to /log output
+17) Add delay metrics to /log output [Complete]
 - File: `bot/handlers/log.py`
 - Include queue depth, max delay, average delay, and highest per-chat delay in `/log` output (admin-only).
 - Done: Admin `/log` shows delay metrics when backlog exists.
 
-18) Logging and metrics
+18) Logging and metrics [Complete]
 - File: `bot/services/rate_limiter.py`
 - Log on enqueue (ready_at, delay, queue depth), on dispatch, and heavy-load typing activations; optional notify `ADMIN_CHAT_ID_LOG` for sustained delays.
 - Done: Logs visible in `bot.log` with clear fields.
 
-19) Feature flag for rollout
+19) Feature flag for rollout [Complete]
 - File: `bot/utils/config.py`
 - Add `ENABLE_RATE_LIMITED_QUEUE = True`; guard usage in `main.py` to allow fallback.
 - Done: Toggle works; off-mode uses direct sends.
 
-20) Manual validation scripts
-- File: `scripts/validate_rate_limiter.py` (optional)
-- Script to enqueue N messages across M chats to verify global and per-chat limits and heavy-load typing indicator behavior.
-- Done: Script runs locally; logs show constraints respected.
+[test] tests/ test_api_4.py - test_api_10.py, test_api_13.py - test_api_19.py [Complete]
 
-21) Documentation updates
+20) Manual validation scripts [Complete]
+- File: `scripts/validate_rate_limiter.py`
+- Script to enqueue N messages across M chats to verify global and per-chat limits, observe backlog metrics, and confirm typing indicator behavior.
+- Done: CLI helper simulates bursts, prints pacing summaries, and exercises logging end-to-end.
+
+21) Documentation updates [Complete]
 - Files: `README.md` (or add a short section), link from `CLAUDE.md`
 - Describe queue behavior, limits, typing indicator under load, and `/log` delay metrics; note that all messages are eventually delivered.
 - Done: Docs reviewed and committed.
+
 
 

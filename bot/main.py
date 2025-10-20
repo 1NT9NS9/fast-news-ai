@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
 
-from bot.utils.config import TELEGRAM_BOT_API, ADMIN_CHAT_ID_LOG_INT
+from bot.utils.config import TELEGRAM_BOT_API, ADMIN_CHAT_ID_LOG_INT, ENABLE_RATE_LIMITED_QUEUE
 from bot.utils.logger import setup_logging
 
 # Import all handlers
@@ -82,6 +82,9 @@ def create_application():
 
     async def on_startup(app: Application) -> None:
         nonlocal rate_limiter
+        if not ENABLE_RATE_LIMITED_QUEUE:
+            messenger_service.configure(bot=app.bot, rate_limiter=None)
+            return
         if rate_limiter is None:
             rate_limiter = RateLimiter(bot=app.bot)
         messenger_service.configure(bot=app.bot, rate_limiter=rate_limiter)
@@ -89,7 +92,7 @@ def create_application():
 
     async def on_shutdown(app: Application) -> None:
         try:
-            if rate_limiter is not None:
+            if ENABLE_RATE_LIMITED_QUEUE and rate_limiter is not None:
                 await rate_limiter.stop()
         finally:
             await scraper.close_http_client()

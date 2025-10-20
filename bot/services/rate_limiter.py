@@ -19,6 +19,7 @@ from telegram import Bot
 from telegram.error import NetworkError, RetryAfter, TimedOut
 
 from bot.utils.config import (
+    ADMIN_CHAT_ID_LOG_INT,
     GLOBAL_RATE_MESSAGES_PER_SEC,
     HEAVY_LOAD_DELAY_THRESHOLD_SEC,
     PER_CHAT_COOLDOWN_SEC,
@@ -58,6 +59,12 @@ class RateLimiter:
         self._queue_lock: Optional[asyncio.Lock] = None
         self._worker_task: Optional[asyncio.Task[None]] = None
         self._running: bool = False
+
+        # Queue monitoring and alerts.
+        self._admin_chat_id_log = ADMIN_CHAT_ID_LOG_INT
+        self._last_delay_alert_at: Optional[float] = None
+        self._delay_alert_cooldown: float = 300.0  # seconds between admin alerts
+        self._delay_alert_threshold: float = HEAVY_LOAD_DELAY_THRESHOLD_SEC * 2.0
 
         # Retry configuration.
         self._max_retry_attempts: int = 3
@@ -116,7 +123,12 @@ class RateLimiter:
 
         delay = ready_at - now
         if delay > HEAVY_LOAD_DELAY_THRESHOLD_SEC:
-            await self._send_typing_indicator(chat_id)
+            self._log.info(
+                "RateLimiter heavy-load typing indicator triggered for chat %s (expected delay %.2fs)",
+                chat_id,
+                delay,
+            )
+            await self._send_typing_indicator(chat_id, delay)
 
         future: asyncio.Future[Any] = loop.create_future()
         entry = _QueueEntry(
@@ -126,12 +138,28 @@ class RateLimiter:
             kwargs=kwargs or {},
             context=context,
             future=future,
+            enqueued_at=now,
+            ready_at=ready_at,
         )
 
         async with self._queue_lock:
             self._queue_seq += 1
             heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
+            queue_depth = len(self._queue)
             self._queue_event.set()
+
+        self._log.info(
+            "RateLimiter enqueued send for chat %s via %s (delay %.2fs, ready_at %.6f, queue_depth %d)",
+            chat_id,
+            getattr(method, "__name__", repr(method)),
+            max(0.0, delay),
+            ready_at,
+            queue_depth,
+        )
+
+        if queue_depth > self._global_rate_per_sec or delay > HEAVY_LOAD_DELAY_THRESHOLD_SEC:
+            metrics = await self.queue_metrics()
+            await self._maybe_notify_delay(metrics)
 
         loop = self._ensure_loop()
 
@@ -240,6 +268,20 @@ class RateLimiter:
         attempt = entry.retries
         loop = self._ensure_loop()
 
+        queue_depth = await self._queue_size()
+        waited = max(0.0, now - entry.enqueued_at)
+        ready_offset = max(0.0, entry.ready_at - now)
+        method_name = getattr(entry.method, "__name__", repr(entry.method))
+        self._log.info(
+            "RateLimiter dispatch starting for chat %s via %s (waited %.2fs, ready_offset %.2fs, retries %d, queue_depth %d)",
+            entry.chat_id,
+            method_name,
+            waited,
+            ready_offset,
+            attempt,
+            queue_depth,
+        )
+
         while True:
             try:
                 result = await entry.method(*entry.args, **entry.kwargs)
@@ -303,6 +345,13 @@ class RateLimiter:
                 self.record_chat_send(entry.chat_id, send_time)
                 entry.retries = 0
                 self._resolve_entry(entry, result)
+                total_wait = max(0.0, send_time - entry.enqueued_at)
+                self._log.info(
+                    "RateLimiter dispatch completed for chat %s via %s (total_wait %.2fs)",
+                    entry.chat_id,
+                    method_name,
+                    total_wait,
+                )
                 return
 
     async def _requeue(self, entry: "_QueueEntry", ready_at: float) -> None:
@@ -311,6 +360,7 @@ class RateLimiter:
 
         async with self._queue_lock:
             self._queue_seq += 1
+            entry.ready_at = ready_at
             heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
             self._queue_event.set()
 
@@ -320,9 +370,14 @@ class RateLimiter:
         oldest = self._global_window[0]
         return max(now, oldest + 1.0)
 
-    async def _send_typing_indicator(self, chat_id: int | str) -> None:
+    async def _send_typing_indicator(self, chat_id: int | str, delay: float) -> None:
         try:
             await self._bot.send_chat_action(chat_id=chat_id, action="typing")
+            self._log.info(
+                "RateLimiter sent typing indicator for chat %s due to expected delay %.2fs",
+                chat_id,
+                delay,
+            )
         except Exception as exc:  # pylint: disable=broad-except
             self._log.debug(
                 "RateLimiter typing indicator failed for chat %s: %s",
@@ -355,6 +410,111 @@ class RateLimiter:
         if entry.future is not None and not entry.future.done():
             entry.future.set_exception(exc)
 
+    async def _queue_size(self) -> int:
+        if self._queue_lock is None:
+            return 0
+        async with self._queue_lock:
+            return len(self._queue)
+
+    async def queue_metrics(self) -> Dict[str, Any]:
+        """Return current queue delay metrics for diagnostics."""
+        loop = self._ensure_loop()
+        now = loop.time()
+
+        if self._queue_lock is None:
+            return {
+                "queue_depth": 0,
+                "max_delay_sec": 0.0,
+                "avg_delay_sec": 0.0,
+                "max_delay_chat_id": None,
+                "max_delay_chat_sec": 0.0,
+                "sampled_at": now,
+            }
+
+        async with self._queue_lock:
+            queue_depth = len(self._queue)
+            if queue_depth == 0:
+                return {
+                    "queue_depth": 0,
+                    "max_delay_sec": 0.0,
+                    "avg_delay_sec": 0.0,
+                    "max_delay_chat_id": None,
+                    "max_delay_chat_sec": 0.0,
+                    "sampled_at": now,
+                }
+
+            delays: List[float] = []
+            per_chat: Dict[int | str, float] = {}
+            for ready_at, _, entry in self._queue:
+                delay_val = max(0.0, ready_at - now)
+                delays.append(delay_val)
+                existing = per_chat.get(entry.chat_id)
+                if existing is None or delay_val > existing:
+                    per_chat[entry.chat_id] = delay_val
+
+        max_delay = max(delays) if delays else 0.0
+        avg_delay = sum(delays) / queue_depth if queue_depth else 0.0
+        max_delay_chat_id: Optional[int | str] = None
+        max_delay_chat_sec = 0.0
+        if per_chat:
+            max_delay_chat_id, max_delay_chat_sec = max(per_chat.items(), key=lambda item: item[1])
+
+        return {
+            "queue_depth": queue_depth,
+            "max_delay_sec": max_delay,
+            "avg_delay_sec": avg_delay,
+            "max_delay_chat_id": max_delay_chat_id,
+            "max_delay_chat_sec": max_delay_chat_sec,
+            "sampled_at": now,
+        }
+
+    async def _maybe_notify_delay(self, metrics: Dict[str, Any]) -> None:
+        if self._admin_chat_id_log is None:
+            return
+
+        queue_depth = metrics.get("queue_depth", 0)
+        max_delay = metrics.get("max_delay_sec", 0.0)
+
+        if queue_depth == 0 or max_delay < self._delay_alert_threshold:
+            return
+
+        loop = self._ensure_loop()
+        now = loop.time()
+
+        if self._last_delay_alert_at is not None and (now - self._last_delay_alert_at) < self._delay_alert_cooldown:
+            return
+
+        self._last_delay_alert_at = now
+
+        avg_delay = metrics.get("avg_delay_sec", 0.0)
+        worst_chat = metrics.get("max_delay_chat_id")
+        worst_delay = metrics.get("max_delay_chat_sec", 0.0)
+
+        message = (
+            "Warning: rate limiter backlog detected.\n"
+            f"Queue depth: {queue_depth}\n"
+            f"Max delay: {max_delay:.2f}s\n"
+            f"Average delay: {avg_delay:.2f}s"
+        )
+        if worst_chat is not None:
+            message += f"\nWorst chat: {worst_chat} ({worst_delay:.2f}s)"
+
+        loop.create_task(self._safe_notify_admin(message))
+        self._log.warning(
+            "RateLimiter backlog alert (queue_depth=%d, max_delay=%.2fs, avg_delay=%.2fs, worst_chat=%s, worst_delay=%.2fs)",
+            queue_depth,
+            max_delay,
+            avg_delay,
+            worst_chat,
+            worst_delay,
+        )
+
+    async def _safe_notify_admin(self, text: str) -> None:
+        try:
+            await self._bot.send_message(chat_id=self._admin_chat_id_log, text=text)
+        except Exception as exc:  # pylint: disable=broad-except
+            self._log.debug("RateLimiter failed to send backlog alert: %s", exc)
+
 
 @dataclass
 class _QueueEntry:
@@ -365,3 +525,5 @@ class _QueueEntry:
     context: Optional[Any]
     future: asyncio.Future[Any]
     retries: int = field(default=0)
+    enqueued_at: float = field(default=0.0)
+    ready_at: float = field(default=0.0)

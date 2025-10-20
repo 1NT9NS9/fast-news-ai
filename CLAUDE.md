@@ -1,8 +1,8 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Documentation:** [Architecture](docs/ARCHITECTURE.md) | [Domain Model](docs/DOMAIN.md) | [API Spec](docs/API_SPEC.yaml)
+**Documentation:** [Architecture](docs/ARCHITECTURE.md) | [Domain Model](docs/DOMAIN.md) | [API Spec](docs/API_SPEC.yaml) | [Rate Limiter](docs/RATE_LIMITER.md)
 
 ## What This Bot Does
 
@@ -168,3 +168,12 @@ docker run -d --name keytime-bot \
 # View logs
 docker logs -f keytime-bot
 ```
+## Completed Rate Limiter Rollout Tasks
+
+- All Telegram outbound sends route through bot/services/messenger.py, which wraps the RateLimiter queue.
+- bot/services/rate_limiter.py tracks global (30 msg/s) and per-chat (1s) pacing, retries transient errors (up to 3x), and emits typing indicators when delays exceed 3s.
+- /log (admin) now reports queue depth, average/max delay, and worst per-chat delay via get_queue_metrics().
+- Rollout flag ENABLE_RATE_LIMITED_QUEUE (see README.md) toggles between queued + direct-send modes; messenger falls back automatically when disabled.
+- Manual validation script (scripts/validate_rate_limiter.py) stress-tests the queue and prints pacing metrics.
+- Automated tests: 	tests/ 
+

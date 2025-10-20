@@ -90,6 +90,9 @@ GLOBAL_RATE_MESSAGES_PER_SEC: int = 30
 PER_CHAT_COOLDOWN_SEC: float = 1.0
 HEAVY_LOAD_DELAY_THRESHOLD_SEC: float = 3.0
 
+# Rollout feature flags
+ENABLE_RATE_LIMITED_QUEUE: bool = os.getenv("ENABLE_RATE_LIMITED_QUEUE", "true").lower() in {"1", "true", "yes"}
+
 # AI/Clustering settings
 SIMILARITY_THRESHOLD: float = 0.9
 GEMINI_API_RATE_LIMIT: int = 4000  # Gemini API rate limit: 4000 requests per minute

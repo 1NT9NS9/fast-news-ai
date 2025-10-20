@@ -1,3 +1,4 @@
+# python -m pytest tests (in terminal venv)
 from bot.services.rate_limiter import RateLimiter
 
 
