@@ -93,7 +93,9 @@ class RateLimiter:
 
         if self._queue_lock is not None:
             async with self._queue_lock:
-                self._queue.clear()
+                while self._queue:
+                    _, _, entry = heapq.heappop(self._queue)
+                    self._reject_entry(entry, RuntimeError("RateLimiter stopped"))
 
     async def enqueue_send(
         self,
@@ -103,7 +105,7 @@ class RateLimiter:
         args: Tuple[Any, ...] = (),
         kwargs: Optional[Dict[str, Any]] = None,
         context: Optional[Any] = None,
-    ) -> None:
+    ) -> Any:
         """Add a Telegram send operation to the outbound queue."""
         if self._queue_event is None or self._queue_lock is None:
             raise RuntimeError("RateLimiter.start() must be awaited before enqueue_send.")
@@ -116,18 +118,28 @@ class RateLimiter:
         if delay > HEAVY_LOAD_DELAY_THRESHOLD_SEC:
             await self._send_typing_indicator(chat_id)
 
+        future: asyncio.Future[Any] = loop.create_future()
         entry = _QueueEntry(
             method=method,
             chat_id=chat_id,
             args=args,
             kwargs=kwargs or {},
             context=context,
+            future=future,
         )
 
         async with self._queue_lock:
             self._queue_seq += 1
             heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
             self._queue_event.set()
+
+        try:
+            return await future
+        except asyncio.CancelledError:
+            if not future.done():
+                future.cancel()
+                await self._cancel_entry(entry)
+            raise
 
     def can_send_global(self, now: float) -> bool:
         """Return True if another message can be sent at `now`."""
@@ -226,7 +238,10 @@ class RateLimiter:
 
         while True:
             try:
-                await entry.method(*entry.args, **entry.kwargs)
+                result = await entry.method(*entry.args, **entry.kwargs)
+            except asyncio.CancelledError as exc:
+                self._reject_entry(entry, exc)
+                raise
             except RetryAfter as exc:
                 attempt += 1
                 if attempt > self._max_retry_attempts:
@@ -235,6 +250,7 @@ class RateLimiter:
                         entry.chat_id,
                         exc_info=exc,
                     )
+                    self._reject_entry(entry, exc)
                     return
                 entry.retries = attempt
                 delay = max(float(exc.retry_after), self._retry_backoff(attempt))
@@ -256,6 +272,7 @@ class RateLimiter:
                         entry.chat_id,
                         exc_info=exc,
                     )
+                    self._reject_entry(entry, exc)
                     return
                 entry.retries = attempt
                 delay = self._retry_backoff(attempt)
@@ -268,11 +285,20 @@ class RateLimiter:
                 )
                 await self._requeue(entry, ready_at)
                 return
+            except Exception as exc:  # pylint: disable=broad-except
+                self._log.exception(
+                    "RateLimiter encountered unexpected error dispatching chat %s",
+                    entry.chat_id,
+                    exc_info=exc,
+                )
+                self._reject_entry(entry, exc)
+                return
             else:
                 send_time = loop.time()
                 self.record_global(send_time)
                 self.record_chat_send(entry.chat_id, send_time)
                 entry.retries = 0
+                self._resolve_entry(entry, result)
                 return
 
     async def _requeue(self, entry: "_QueueEntry", ready_at: float) -> None:
@@ -304,6 +330,27 @@ class RateLimiter:
         # Exponential backoff: base * 2^(attempt-1)
         return self._retry_base_delay * (2 ** max(0, attempt - 1))
 
+    async def _cancel_entry(self, entry: "_QueueEntry") -> None:
+        if self._queue_lock is None or self._queue_event is None:
+            return
+        async with self._queue_lock:
+            for index, queued in enumerate(self._queue):
+                if queued[2] is entry:
+                    self._queue[index] = self._queue[-1]
+                    self._queue.pop()
+                    if index < len(self._queue):
+                        heapq.heapify(self._queue)
+                    break
+            self._queue_event.set()
+
+    def _resolve_entry(self, entry: "_QueueEntry", result: Any) -> None:
+        if entry.future is not None and not entry.future.done():
+            entry.future.set_result(result)
+
+    def _reject_entry(self, entry: "_QueueEntry", exc: BaseException) -> None:
+        if entry.future is not None and not entry.future.done():
+            entry.future.set_exception(exc)
+
 
 @dataclass
 class _QueueEntry:
@@ -312,4 +359,5 @@ class _QueueEntry:
     args: Tuple[Any, ...]
     kwargs: Dict[str, Any]
     context: Optional[Any]
+    future: asyncio.Future[Any]
     retries: int = field(default=0)

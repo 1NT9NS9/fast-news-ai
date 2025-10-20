@@ -58,6 +58,8 @@ from bot.handlers import (
 
 # Import services for cleanup
 from bot.services import ScraperService
+from bot.services.rate_limiter import RateLimiter
+from bot.services import messenger as messenger_service
 
 # Setup logging with optional Telegram notifications
 logger, user_logger = setup_logging(
@@ -76,12 +78,28 @@ def create_application():
 
     # Initialize scraper service for cleanup
     scraper = ScraperService()
+    rate_limiter: RateLimiter | None = None
+
+    async def on_startup(app: Application) -> None:
+        nonlocal rate_limiter
+        if rate_limiter is None:
+            rate_limiter = RateLimiter(bot=app.bot)
+        messenger_service.configure(bot=app.bot, rate_limiter=rate_limiter)
+        await rate_limiter.start()
+
+    async def on_shutdown(app: Application) -> None:
+        try:
+            if rate_limiter is not None:
+                await rate_limiter.stop()
+        finally:
+            await scraper.close_http_client()
 
     # Create application
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_API)
-        .post_shutdown(lambda _: scraper.close_http_client())
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
         .build()
     )
 

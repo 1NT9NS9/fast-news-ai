@@ -8,7 +8,13 @@ from telegram.ext import ContextTypes
 
 from bot.utils.config import MAX_NEWS_REQUESTS_PER_DAY, DEFAULT_NEWS_TIME_LIMIT_HOURS, DEFAULT_MAX_SUMMARY_POSTS
 from bot.utils.logger import setup_logging
-from bot.services import StorageService, AIService, ScraperService, ClusteringService
+from bot.services import (
+    StorageService,
+    AIService,
+    ScraperService,
+    ClusteringService,
+    messenger as messenger_service,
+)
 
 # Setup logging
 logger, user_logger = setup_logging()
@@ -30,11 +36,9 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
     scraper = ScraperService()
     clustering = ClusteringService()
 
-    # Get the query object if it's from a button callback
-    query = update.callback_query if update.callback_query else None
-
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
+    chat_id = update.effective_chat.id
 
     logger.info(f"User {user_id} ran /news command.")
     user_logger.info(f"User_{user_id} (@{username}) clicked /news")
@@ -53,7 +57,6 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
     if last_news_date != today:
         news_request_count = 0
 
-    remaining = MAX_NEWS_REQUESTS_PER_DAY - news_request_count
     is_allowed = news_request_count < MAX_NEWS_REQUESTS_PER_DAY
 
     if not is_allowed:
@@ -66,10 +69,8 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         )
         if processing_msg:
             await processing_msg.edit_text(message_text)
-        elif query:
-            await query.message.reply_text(message_text)
         else:
-            await update.message.reply_text(message_text)
+            await messenger_service.send_text(chat_id, message_text)
         return
 
     # Get user's channels and preferences from loaded data
@@ -87,10 +88,8 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         )
         if processing_msg:
             await processing_msg.edit_text(message_text)
-        elif query:
-            await query.message.reply_text(message_text)
         else:
-            await update.message.reply_text(message_text)
+            await messenger_service.send_text(chat_id, message_text)
         return
 
     # Increment the request counter (single save instead of load+save)
@@ -98,7 +97,6 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
         data[user_id_str]['last_news_date'] = today
         data[user_id_str]['news_request_count'] = news_request_count + 1
         await storage.save_user_data(data)
-    remaining -= 1
 
     # Send initial message or update processing message
     status_text = (
@@ -110,10 +108,8 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
     if processing_msg:
         await processing_msg.edit_text(status_text)
         status_message = processing_msg
-    elif query:
-        status_message = await query.message.reply_text(status_text)
     else:
-        status_message = await update.message.reply_text(status_text)
+        status_message = await messenger_service.send_text(chat_id, status_text)
 
     try:
         # Step 1: Scrape all channels concurrently
@@ -192,10 +188,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
             f"🔥 {len(summaries)} уникальных новостей для Вас! Собраны из {len(channels)} каналов\n"
         )
 
-        if query:
-            await query.message.reply_text(header)
-        else:
-            await update.message.reply_text(header)
+        await messenger_service.send_text(chat_id, header)
 
         # Send each summary
         for idx, summary in enumerate(summaries, 1):
@@ -239,10 +232,7 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
             try:
-                if query:
-                    await query.message.reply_text(message, parse_mode='MarkdownV2')
-                else:
-                    await update.message.reply_text(message, parse_mode='MarkdownV2')
+                await messenger_service.send_text(chat_id, message, parse_mode='MarkdownV2')
             except Exception as e:
                 # Fallback to plain text if markdown parsing fails
                 channels_text = ", ".join(summary['channels'][:3])
@@ -254,28 +244,19 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
                     f"{summary['summary']}\n\n"
                     f"Источники ({summary['count']}): {channels_text}\n"
                 )
-                if query:
-                    await query.message.reply_text(message_plain)
-                else:
-                    await update.message.reply_text(message_plain)
+                await messenger_service.send_text(chat_id, message_plain)
 
             # Small delay to avoid rate limiting
             await asyncio.sleep(0.5)
 
         # Send return to menu button without separator
         reply_markup = create_return_menu_button()
-        if query:
-            await query.message.reply_text("Выберите действие:", reply_markup=reply_markup)
-        else:
-            await update.message.reply_text("Выберите действие:", reply_markup=reply_markup)
+        await messenger_service.send_text(chat_id, "Выберите действие:", reply_markup=reply_markup)
 
     except Exception as e:
         logger.error(f"Error in news_command for user {user_id}: {str(e)}", exc_info=True)
         error_text = "😕 Извините, что-то пошло не так. Попробуйте позже."
-        if query:
-            await query.message.reply_text(error_text)
-        else:
-            await update.message.reply_text(error_text)
+        await messenger_service.send_text(chat_id, error_text)
 
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

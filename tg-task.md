@@ -56,25 +56,27 @@ Notes
 
 [test] tests/ test_api_4.py - test_api_10.py [Complete]
 
-11) Messenger wrapper helpers
+11) Messenger wrapper helpers [Complete]
 - File: `bot/services/messenger.py`
 - Add `send_text`, `send_photo`, `send_document`, `send_media_group` thin wrappers over `enqueue_send`.
 - Done: Handlers can import and use.
 
-12) Bootstrap RateLimiter in app startup
+12) Bootstrap RateLimiter in app startup [Complete]
 - File: `bot/main.py`
 - Instantiate service with `application.bot`; wire `on_startup` to `start()` and `on_shutdown` to `stop()`.
 - Done: Bot boots with worker running; graceful shutdown works.
 
-13) Refactor buttons handler
+13) Refactor buttons handler [Complete]
 - File: `bot/handlers/buttons.py`
 - Replace direct sends with messenger wrappers; keep `answer_callback_query` immediate.
 - Done: Handler compiles and uses the queue.
 
-14) Refactor news handler
+14) Refactor news handler [Complete]
 - File: `bot/handlers/news.py`
 - Route all outgoing text/media sends through messenger wrappers; preserve existing functionality.
 - Done: Compiles; digest sends are queued and rate-limited.
+
+[test] tests/ test_api_4.py - test_api_10.py, test_api_13.py - test_api_14.py[Complete]
 
 15) Refactor manage handler
 - File: `bot/handlers/manage.py`

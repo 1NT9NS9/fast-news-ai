@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.utils.config import ADMIN_CHAT_ID, MAX_SUMMARY_POSTS_LIMIT, MAX_NEWS_TIME_LIMIT_HOURS
 from bot.utils.logger import setup_logging
 from bot.services import StorageService, ScraperService
+from bot.services import messenger as messenger_service
 
 # Setup logging
 logger, user_logger = setup_logging()
@@ -130,7 +131,7 @@ async def validate_and_store_username(update: Update, context: ContextTypes.DEFA
     if validation_msg:
         await validation_msg.edit_text(error_msg, reply_markup=reply_markup)
     else:
-        await update.message.reply_text(error_msg, reply_markup=reply_markup)
+        await messenger_service.send_text(update.effective_chat.id, error_msg, reply_markup=reply_markup)
 
     context.user_data.clear()
     return False
@@ -171,7 +172,7 @@ async def send_form_to_admin(context: ContextTypes.DEFAULT_TYPE, form_type: str,
         else:
             return False
 
-        await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
+        await messenger_service.send_text(ADMIN_CHAT_ID, message)
         return True
     except Exception as e:
         logger.error(f"Error sending form to admin: {e}", exc_info=True)
@@ -197,7 +198,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Выберите действие из меню:"
         )
         reply_markup = create_main_menu()
-        await query.message.reply_text(welcome_message, reply_markup=reply_markup)
+        await messenger_service.send_text(update.effective_chat.id, welcome_message, reply_markup=reply_markup)
         return ConversationHandler.END
 
     elif query.data == 'start_plans':
@@ -214,12 +215,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Enterprise: Хотите увеличить временной интервал или другие параметры, напишите @fast_news_ai_admin"
         )
 
-        await query.message.reply_text(plans_message, reply_markup=reply_markup)
+        await messenger_service.send_text(update.effective_chat.id, plans_message, reply_markup=reply_markup)
         return ConversationHandler.END
 
     elif query.data == 'add_channel':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Add channel' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "➕ Добавить канал\n\n"
             "Введите 1 канал в строку ввода.\n"
             "Пример: @channel01"
@@ -228,7 +229,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'remove_channel':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Remove channel' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "➖ Удалить канал\n\n"
             "Введите 1 канал в строку ввода.\n"
             "Пример: @channel01"
@@ -238,7 +239,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'list_channels':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Channel List' button")
         # Send immediate feedback
-        processing_msg = await query.message.reply_text("⏳ Загружаю список каналов...")
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, "⏳ Загружаю список каналов...")
 
         reply_markup = create_return_menu_button()
 
@@ -253,7 +254,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Format display: hours or days
         display = format_time_display(current_time)
 
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             f"⏰ Текущий временной диапазон: {display}\n\n"
             f"Чтобы изменить диапазон, введите:\n"
             f"• Количество часов (например: 24)\n"
@@ -265,7 +266,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'news_count':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Number of News' button")
         current_max = await storage.get_user_max_posts(user_id)
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             f"📊 Текущее количество новостей: {current_max}\n\n"
             f"Чтобы изменить, введите количество (например: 10)\n"
             f"Максимум: {MAX_SUMMARY_POSTS_LIMIT} новостей"
@@ -276,7 +277,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from bot.handlers.news import news_command_internal
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Get News' button")
         # Send immediate feedback before processing
-        processing_msg = await query.message.reply_text(
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, 
             "⏳ Начинаю сбор новостей...\n"
             "Это займёт несколько секунд."
         )
@@ -288,7 +289,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_logger.info(f"User_{user_id} (@{username}) clicked 'News Feed' button")
         reply_markup = create_return_menu_button()
         message_text = 'Здесь будут каналы по темам "скоро" ... '
-        await query.message.reply_text(message_text, reply_markup=reply_markup)
+        await messenger_service.send_text(update.effective_chat.id, message_text, reply_markup=reply_markup)
         return ConversationHandler.END
 
     elif query.data == 'for_channel_owners':
@@ -299,12 +300,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Для владельцев каналов мы предлагаем возможность добавить каналы в ленту новостей.\n\n"
             "Выберите действие:"
         )
-        await query.message.reply_text(message_text, reply_markup=reply_markup)
+        await messenger_service.send_text(update.effective_chat.id, message_text, reply_markup=reply_markup)
         return ConversationHandler.END
 
     elif query.data == 'add_to_feed':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Add to feed' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "➕ Добавить канал в ленту\n\n"
             "Введите название канала:\n"
             "Пример: @channels01"
@@ -313,7 +314,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'remove_from_feed':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Remove from feed' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "➖ Удалить канал из ленты\n\n"
             "Введите название канала:\n"
             "Пример: @channels01"
@@ -322,7 +323,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'restrict_access':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Restrict access' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "🚫 Ограничить доступ\n\n"
             "Введите название канала:\n"
             "Пример: @channels01"
@@ -334,7 +335,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hashtag = '#' + query.data.replace('hashtag_', '')
         context.user_data['form_hashtag'] = hashtag
         user_logger.info(f"User_{user_id} (@{username}) selected hashtag {hashtag}")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             f"✅ Выбран хештег: {hashtag}\n\n"
             f"Напишите краткое описание вашего канала (максимум 30 символов):"
         )
@@ -343,7 +344,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'remove_all':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Delete All Channels' button")
         # Send immediate feedback
-        processing_msg = await query.message.reply_text("⏳ Удаляю все каналы...")
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, "⏳ Удаляю все каналы...")
 
         channels = await storage.get_user_channels(user_id)
         reply_markup = create_return_menu_button()
@@ -370,7 +371,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await storage.save_plan_subscription(user_id, username, plan_name)
 
         reply_markup = create_return_menu_button()
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "Спасибо за ваш выбор! Сейчас мы добавляем способ оплаты\n"
             "Когда появиться возможность оплатить, мы отправим Вам сообщение",
             reply_markup=reply_markup
@@ -380,7 +381,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'manage_folders':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Manage Folders' button")
         # Send immediate feedback
-        processing_msg = await query.message.reply_text("⏳ Загружаю папки...")
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, "⏳ Загружаю папки...")
 
         active_folder = await storage.get_active_folder_name(user_id)
         folders = await storage.get_user_folders(user_id)
@@ -401,7 +402,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_logger.info(f"User_{user_id} (@{username}) switching to folder '{folder_name}'")
 
         # Send immediate feedback
-        processing_msg = await query.message.reply_text(f"⏳ Переключаюсь на папку {folder_name}...")
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, f"⏳ Переключаюсь на папку {folder_name}...")
 
         if await storage.switch_active_folder(user_id, folder_name):
             reply_markup = await create_folder_management_menu(user_id)
@@ -417,7 +418,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == 'create_folder':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Create Folder' button")
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "➕ Создание новой папки\n\n"
             "Введите название новой папки (максимум 10 символов):"
         )
@@ -429,7 +430,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if len(folders) == 1:
             reply_markup = await create_folder_management_menu(user_id)
-            await query.message.reply_text(
+            await messenger_service.send_text(update.effective_chat.id, 
                 "❌ Нельзя удалить единственную папку.",
                 reply_markup=reply_markup
             )
@@ -442,7 +443,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton("🏠 Вернуться в меню", callback_data='manage_folders')])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "🗑️ Удаление папки\n\n"
             "Выберите папку для удаления.\n"
             "⚠️ Все каналы в папке будут удалены:",
@@ -455,7 +456,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_logger.info(f"User_{user_id} (@{username}) confirming delete folder '{folder_name}'")
 
         # Send immediate feedback
-        processing_msg = await query.message.reply_text(f"⏳ Удаляю папку {folder_name}...")
+        processing_msg = await messenger_service.send_text(update.effective_chat.id, f"⏳ Удаляю папку {folder_name}...")
 
         if await storage.delete_folder(user_id, folder_name):
             reply_markup = await create_folder_management_menu(user_id)
@@ -492,7 +493,7 @@ async def handle_add_to_feed_channel(update: Update, context: ContextTypes.DEFAU
 
     # Validate channel format
     if not channel.startswith('@'):
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Название канала должно начинаться с @\n"
             "Попробуйте еще раз:"
         )
@@ -517,7 +518,7 @@ async def handle_add_to_feed_channel(update: Update, context: ContextTypes.DEFAU
 
     # Show confirmation message and proceed to hashtag selection
     reply_markup = create_hashtag_keyboard()
-    await update.message.reply_text(
+    await messenger_service.send_text(update.effective_chat.id, 
         f"Ваше имя ({owner_name}) должно совпадать с именем в описании канала, иначе мы не сможем рассмотреть вашу заявку!\n\n"
         f"Выберите хештег для вашего канала:",
         reply_markup=reply_markup
@@ -533,7 +534,7 @@ async def handle_add_to_feed_description(update: Update, context: ContextTypes.D
 
     # Validate description length
     if len(description) > 30:
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             f"❌ Описание слишком длинное ({len(description)} символов)\n"
             f"Максимум: 30 символов\n\n"
             f"Попробуйте еще раз:"
@@ -541,7 +542,7 @@ async def handle_add_to_feed_description(update: Update, context: ContextTypes.D
         return WAITING_FOR_ADD_TO_FEED_DESCRIPTION
 
     if len(description) < 5:
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Описание слишком короткое (минимум 5 символов)\n"
             "Попробуйте еще раз:"
         )
@@ -565,14 +566,14 @@ async def handle_add_to_feed_description(update: Update, context: ContextTypes.D
 
     if success:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "✅ Ваша заявка отправлена на рассмотрение!\n\n"
             "Мы свяжемся с вами в ближайшее время.",
             reply_markup=reply_markup
         )
     else:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Произошла ошибка при отправке заявки.\n"
             "Попробуйте позже или свяжитесь с нами: @fast_news_ai_admin",
             reply_markup=reply_markup
@@ -597,7 +598,7 @@ async def handle_remove_from_feed_channel(update: Update, context: ContextTypes.
 
     # Validate channel format
     if not channel.startswith('@'):
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Название канала должно начинаться с @\n"
             "Попробуйте еще раз:"
         )
@@ -606,7 +607,7 @@ async def handle_remove_from_feed_channel(update: Update, context: ContextTypes.
     # Check if channel is in feed
     if not await storage.check_channel_in_feed(channel):
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             f"❌ Канал {channel} не найден в ленте.",
             reply_markup=reply_markup
         )
@@ -624,7 +625,7 @@ async def handle_remove_from_feed_channel(update: Update, context: ContextTypes.
     owner_name = context.user_data['form_owner_name']
 
     # Show confirmation message and proceed to reason
-    await update.message.reply_text(
+    await messenger_service.send_text(update.effective_chat.id, 
         f"✅ Канал: {channel}\n\n"
         f"Ваше имя ({owner_name}) должно совпадать с именем в описании канала, иначе мы не сможем обработать вашу заявку!\n\n"
         f"Укажите причину (необязательно):\n"
@@ -658,14 +659,14 @@ async def handle_remove_from_feed_reason(update: Update, context: ContextTypes.D
 
     if success:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "✅ Ваша заявка отправлена на рассмотрение!\n\n"
             "Мы свяжемся с вами в ближайшее время.",
             reply_markup=reply_markup
         )
     else:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Произошла ошибка при отправке заявки.\n"
             "Попробуйте позже или свяжитесь с нами: @fast_news_ai_admin",
             reply_markup=reply_markup
@@ -690,7 +691,7 @@ async def handle_restrict_access_channel(update: Update, context: ContextTypes.D
 
     # Validate channel format
     if not channel.startswith('@'):
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Название канала должно начинаться с @\n"
             "Попробуйте еще раз:"
         )
@@ -714,7 +715,7 @@ async def handle_restrict_access_channel(update: Update, context: ContextTypes.D
     owner_name = context.user_data['form_owner_name']
 
     # Show confirmation message and proceed to reason
-    await update.message.reply_text(
+    await messenger_service.send_text(update.effective_chat.id, 
         f"Ваше имя ({owner_name}) должно совпадать с именем в описании канала, иначе мы не сможем рассмотреть вашу заявку!\n\n"
         f"Укажите причину (необязательно):\n"
         f"Или введите 'пропустить' чтобы пропустить этот шаг."
@@ -747,14 +748,14 @@ async def handle_restrict_access_reason(update: Update, context: ContextTypes.DE
 
     if success:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "✅ Ваша заявка отправлена на рассмотрение!\n\n"
             "Мы свяжемся с вами в ближайшее время.",
             reply_markup=reply_markup
         )
     else:
         reply_markup = create_return_menu_button()
-        await update.message.reply_text(
+        await messenger_service.send_text(update.effective_chat.id, 
             "❌ Произошла ошибка при отправке заявки.\n"
             "Попробуйте позже или свяжитесь с нами: @fast_news_ai_admin",
             reply_markup=reply_markup
