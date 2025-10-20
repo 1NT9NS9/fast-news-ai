@@ -56,7 +56,7 @@ class AIService:
         self.embedding_output_dim = EMBEDDING_OUTPUT_DIM
         self.embedding_max_tokens = EMBEDDING_MAX_TOKENS
         self.embedding_rpm = EMBEDDING_RPM
-        self._embedding_chars_per_token = 4  # heuristic: 4 characters ~ 1 token
+        self._embedding_chars_per_token = 3  # heuristic: 3 characters ~ 1 token
         # Generation model configuration
         self.generation_model_name = "gemini-flash-lite-latest"
         self._gemini_model = None  # Cached model instance
@@ -93,7 +93,7 @@ class AIService:
         """
         Truncate an input string so the embedding request stays within token budget.
 
-        Uses a heuristic of four characters per token and trims on a word boundary
+        Uses a heuristic of three characters per token and trims on a word boundary
         when possible. Logs when truncation occurs to aid production tuning.
         """
         if not text:

@@ -96,9 +96,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     inline_markup = create_main_menu()
-    persistent_markup = create_persistent_keyboard()
-    await _send_reply(update, welcome_message, reply_markup=persistent_markup)
-    await _send_reply(update, "Выберите действие:", reply_markup=inline_markup)
+    await _send_reply(update, welcome_message, reply_markup=inline_markup)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -97,7 +97,7 @@ EMBEDDING_RPM = 3000
 EMBEDDING_MAX_TOKENS = 400
 ```
 
-AIService pulls model IDs (`GEMINI_EMBEDDING_MODEL`, `gemini-embedding-001` default) and output dimensions from config, truncates inputs using a 4 chars/token heuristic, and enforces RPM/semaphore limits per embedding call.
+AIService pulls model IDs (`GEMINI_EMBEDDING_MODEL`, `gemini-embedding-001` default) and output dimensions from config, truncates inputs using a 3 chars/token heuristic, and enforces RPM/semaphore limits per embedding call.
 
 ## Data Storage
 
