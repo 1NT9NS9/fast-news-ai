@@ -85,6 +85,11 @@ DEFAULT_MAX_SUMMARY_POSTS: int = 10  # Default number of news summaries
 MAX_SUMMARY_POSTS_LIMIT: int = 30  # Maximum allowed summaries
 MAX_NEWS_REQUESTS_PER_DAY: int = 5  # Rate limit for /news command
 
+# Rate limiter defaults
+GLOBAL_RATE_MESSAGES_PER_SEC: int = 30
+PER_CHAT_COOLDOWN_SEC: float = 1.0
+HEAVY_LOAD_DELAY_THRESHOLD_SEC: float = 3.0
+
 # AI/Clustering settings
 SIMILARITY_THRESHOLD: float = 0.9
 GEMINI_API_RATE_LIMIT: int = 4000  # Gemini API rate limit: 4000 requests per minute

@@ -1,0 +1,315 @@
+# -*- coding: utf-8 -*-
+"""Async rate limiter and send queue for Telegram bot interactions.
+
+Currently provides scaffolding for future tasks:
+- RateLimiter lifecycle hooks (`start`, `stop`, `enqueue_send`)
+- Global sliding-window limiter helpers
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections import deque
+from dataclasses import dataclass, field
+import heapq
+import logging
+from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Tuple
+
+from telegram import Bot
+from telegram.error import NetworkError, RetryAfter, TimedOut
+
+from bot.utils.config import (
+    GLOBAL_RATE_MESSAGES_PER_SEC,
+    HEAVY_LOAD_DELAY_THRESHOLD_SEC,
+    PER_CHAT_COOLDOWN_SEC,
+)
+
+
+SendMethod = Callable[..., Awaitable[Any]]
+
+
+class RateLimiter:
+    """Coordinate outbound Telegram sends with global/per-chat rate controls."""
+
+    def __init__(
+        self,
+        bot: Bot,
+        *,
+        global_rate_per_sec: int = GLOBAL_RATE_MESSAGES_PER_SEC,
+        per_chat_cooldown_sec: float = PER_CHAT_COOLDOWN_SEC,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
+        self._bot = bot
+        self._global_rate_per_sec = max(1, int(global_rate_per_sec))
+        self._per_chat_cooldown = max(0.0, float(per_chat_cooldown_sec))
+        self._loop = loop
+        self._log = logging.getLogger(__name__)
+
+        # Sliding window of send timestamps (seconds since epoch).
+        self._global_window: Deque[float] = deque()
+        # Track last send time per chat for cooldown enforcement.
+        self._per_chat_last_sent: Dict[int | str, float] = {}
+
+        # Priority queue for scheduled sends.
+        self._queue: List[Tuple[float, int, "_QueueEntry"]] = []
+        self._queue_seq: int = 0
+
+        self._queue_event: Optional[asyncio.Event] = None
+        self._queue_lock: Optional[asyncio.Lock] = None
+        self._worker_task: Optional[asyncio.Task[None]] = None
+        self._running: bool = False
+
+        # Retry configuration.
+        self._max_retry_attempts: int = 3
+        self._retry_base_delay: float = 0.5  # seconds
+
+    async def start(self) -> None:
+        """Initialize background resources."""
+        loop = self._ensure_loop()
+
+        if self._queue_event is None:
+            self._queue_event = asyncio.Event()
+        if self._queue_lock is None:
+            self._queue_lock = asyncio.Lock()
+
+        if self._worker_task is None or self._worker_task.done():
+            self._running = True
+            self._worker_task = loop.create_task(self._worker_loop())
+
+    async def stop(self) -> None:
+        """Tear down background resources."""
+        self._running = False
+
+        if self._queue_event is not None:
+            self._queue_event.set()
+
+        if self._worker_task is not None:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+
+        if self._queue_lock is not None:
+            async with self._queue_lock:
+                self._queue.clear()
+
+    async def enqueue_send(
+        self,
+        method: SendMethod,
+        *,
+        chat_id: int | str,
+        args: Tuple[Any, ...] = (),
+        kwargs: Optional[Dict[str, Any]] = None,
+        context: Optional[Any] = None,
+    ) -> None:
+        """Add a Telegram send operation to the outbound queue."""
+        if self._queue_event is None or self._queue_lock is None:
+            raise RuntimeError("RateLimiter.start() must be awaited before enqueue_send.")
+
+        loop = self._ensure_loop()
+        now = loop.time()
+        ready_at = self.next_allowed_for_chat(chat_id, now)
+
+        delay = ready_at - now
+        if delay > HEAVY_LOAD_DELAY_THRESHOLD_SEC:
+            await self._send_typing_indicator(chat_id)
+
+        entry = _QueueEntry(
+            method=method,
+            chat_id=chat_id,
+            args=args,
+            kwargs=kwargs or {},
+            context=context,
+        )
+
+        async with self._queue_lock:
+            self._queue_seq += 1
+            heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
+            self._queue_event.set()
+
+    def can_send_global(self, now: float) -> bool:
+        """Return True if another message can be sent at `now`."""
+        self._trim_global_window(now)
+        return len(self._global_window) < self._global_rate_per_sec
+
+    def record_global(self, now: float) -> None:
+        """Record that a message was sent at `now`."""
+        self._trim_global_window(now)
+        self._global_window.append(now)
+
+    def next_allowed_for_chat(self, chat_id: int | str, now: float) -> float:
+        """Return the earliest timestamp the chat can send again."""
+        last_sent = self._per_chat_last_sent.get(chat_id)
+        if last_sent is None:
+            return now
+        return max(now, last_sent + self._per_chat_cooldown)
+
+    def record_chat_send(self, chat_id: int | str, now: float) -> None:
+        """Record the latest send timestamp for the chat."""
+        self._per_chat_last_sent[chat_id] = max(now, self._per_chat_last_sent.get(chat_id, now))
+
+    def _trim_global_window(self, now: float) -> None:
+        """Drop timestamps older than the 1-second sliding window."""
+        while self._global_window and (now - self._global_window[0]) >= 1.0:
+            self._global_window.popleft()
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+        return self._loop
+
+    async def _worker_loop(self) -> None:
+        assert self._queue_event is not None
+        assert self._queue_lock is not None
+
+        try:
+            while self._running:
+                entry = await self._next_ready_entry()
+                if entry is None:
+                    continue
+                await self._handle_ready_entry(entry)
+        except asyncio.CancelledError:
+            pass
+
+    async def _next_ready_entry(self) -> Optional["_QueueEntry"]:
+        assert self._queue_event is not None
+        assert self._queue_lock is not None
+
+        loop = self._ensure_loop()
+        while self._running:
+            async with self._queue_lock:
+                if not self._queue:
+                    self._queue_event.clear()
+                    wait_timeout = None
+                else:
+                    ready_at, _, entry = self._queue[0]
+                    now = loop.time()
+                    delay = ready_at - now
+                    if delay <= 0:
+                        heapq.heappop(self._queue)
+                        return entry
+                    self._queue_event.clear()
+                    wait_timeout = delay
+
+            try:
+                if wait_timeout is None:
+                    await self._queue_event.wait()
+                else:
+                    await asyncio.wait_for(self._queue_event.wait(), timeout=wait_timeout)
+            except asyncio.TimeoutError:
+                pass
+
+        return None
+
+    async def _handle_ready_entry(self, entry: "_QueueEntry") -> None:
+        """Dispatch an entry if allowed; requeue otherwise."""
+        loop = self._ensure_loop()
+        now = loop.time()
+
+        if not self.can_send_global(now):
+            await self._requeue(entry, self._next_global_ready(now))
+            return
+
+        chat_ready = self.next_allowed_for_chat(entry.chat_id, now)
+        if chat_ready > now:
+            await self._requeue(entry, chat_ready)
+            return
+
+        await self._dispatch_entry(entry, now)
+
+    async def _dispatch_entry(self, entry: "_QueueEntry", now: float) -> None:
+        """Call the underlying Telegram API and record usage."""
+        attempt = entry.retries
+        loop = self._ensure_loop()
+
+        while True:
+            try:
+                await entry.method(*entry.args, **entry.kwargs)
+            except RetryAfter as exc:
+                attempt += 1
+                if attempt > self._max_retry_attempts:
+                    self._log.error(
+                        "RateLimiter dropping send for chat %s after RetryAfter exhaustion",
+                        entry.chat_id,
+                        exc_info=exc,
+                    )
+                    return
+                entry.retries = attempt
+                delay = max(float(exc.retry_after), self._retry_backoff(attempt))
+                ready_at = loop.time() + delay
+                self._log.warning(
+                    "RateLimiter retrying send for chat %s in %.2fs (RetryAfter %.2fs, attempt %d)",
+                    entry.chat_id,
+                    delay,
+                    float(exc.retry_after),
+                    attempt,
+                )
+                await self._requeue(entry, ready_at)
+                return
+            except (TimedOut, NetworkError) as exc:
+                attempt += 1
+                if attempt > self._max_retry_attempts:
+                    self._log.error(
+                        "RateLimiter dropping send for chat %s after network retries",
+                        entry.chat_id,
+                        exc_info=exc,
+                    )
+                    return
+                entry.retries = attempt
+                delay = self._retry_backoff(attempt)
+                ready_at = loop.time() + delay
+                self._log.warning(
+                    "RateLimiter network retry for chat %s in %.2fs (attempt %d)",
+                    entry.chat_id,
+                    delay,
+                    attempt,
+                )
+                await self._requeue(entry, ready_at)
+                return
+            else:
+                send_time = loop.time()
+                self.record_global(send_time)
+                self.record_chat_send(entry.chat_id, send_time)
+                entry.retries = 0
+                return
+
+    async def _requeue(self, entry: "_QueueEntry", ready_at: float) -> None:
+        assert self._queue_lock is not None
+        assert self._queue_event is not None
+
+        async with self._queue_lock:
+            self._queue_seq += 1
+            heapq.heappush(self._queue, (ready_at, self._queue_seq, entry))
+            self._queue_event.set()
+
+    def _next_global_ready(self, now: float) -> float:
+        if not self._global_window:
+            return now
+        oldest = self._global_window[0]
+        return max(now, oldest + 1.0)
+
+    async def _send_typing_indicator(self, chat_id: int | str) -> None:
+        try:
+            await self._bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception as exc:  # pylint: disable=broad-except
+            self._log.debug(
+                "RateLimiter typing indicator failed for chat %s: %s",
+                chat_id,
+                exc,
+            )
+
+    def _retry_backoff(self, attempt: int) -> float:
+        # Exponential backoff: base * 2^(attempt-1)
+        return self._retry_base_delay * (2 ** max(0, attempt - 1))
+
+
+@dataclass
+class _QueueEntry:
+    method: SendMethod
+    chat_id: int | str
+    args: Tuple[Any, ...]
+    kwargs: Dict[str, Any]
+    context: Optional[Any]
+    retries: int = field(default=0)
