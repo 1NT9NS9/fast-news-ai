@@ -193,8 +193,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'return_to_menu':
         user_logger.info(f"User_{user_id} (@{username}) clicked 'Return to menu' button")
         welcome_message = (
-            "Вам необходимо добавить каналы. После добавления каналов, "
-            "вы сможете получать новости.\n\n"
             "Выберите действие из меню:"
         )
         reply_markup = create_main_menu()

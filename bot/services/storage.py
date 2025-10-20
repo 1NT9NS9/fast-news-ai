@@ -386,37 +386,112 @@ class StorageService:
     # Plan Subscriptions Operations
     # ========================================================================
 
-    async def load_plan_subscriptions(self) -> List[Dict]:
-        """Load plan subscription requests from JSON file."""
+    async def load_plan_subscriptions(self) -> Dict[str, Dict]:
+        """Load plan subscription requests grouped by user from JSON file."""
         try:
             async with aiofiles.open(PLAN_SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
                 content = await f.read()
         except FileNotFoundError:
-            return []
+            return {}
         except OSError:
-            return []
+            return {}
 
         if not content:
-            return []
+            return {}
 
         try:
             data = json.loads(content)
-            return data if isinstance(data, list) else []
         except json.JSONDecodeError:
-            return []
+            return {}
+
+        if isinstance(data, dict):
+            # Normalize keys to strings and ignore malformed entries
+            return {
+                str(user_key): user_data
+                for user_key, user_data in data.items()
+                if isinstance(user_data, dict)
+            }
+
+        if isinstance(data, list):
+            # Migrate legacy list format to new per-user dict structure
+            migrated: Dict[str, Dict] = {}
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                user_id = item.get('user_id')
+                plan = item.get('plan')
+                if user_id is None or plan is None:
+                    continue
+
+                user_key = str(user_id)
+                username = item.get('username')
+                timestamp = item.get('timestamp')
+
+                user_entry = migrated.setdefault(
+                    user_key,
+                    {
+                        'user_id': user_id,
+                        'username': username,
+                        'subscriptions': []
+                    }
+                )
+
+                if username and not user_entry.get('username'):
+                    user_entry['username'] = username
+
+                subscriptions = user_entry.setdefault('subscriptions', [])
+                if any(sub.get('plan') == plan for sub in subscriptions if isinstance(sub, dict)):
+                    continue
+
+                subscription_entry = {'plan': plan}
+                if isinstance(timestamp, str) and timestamp:
+                    subscription_entry['timestamp'] = timestamp
+                subscriptions.append(subscription_entry)
+
+            return migrated
+
+        return {}
 
     async def save_plan_subscription(self, user_id: int, username: str, plan_type: str) -> None:
         """Save a plan subscription request to JSON file."""
         subscriptions = await self.load_plan_subscriptions()
 
-        subscription_data = {
-            'user_id': user_id,
-            'username': username,
-            'plan': plan_type,
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        }
+        user_key = str(user_id)
+        timestamp = datetime.now(timezone.utc).isoformat()
 
-        subscriptions.append(subscription_data)
+        if user_key not in subscriptions:
+            subscriptions[user_key] = {
+                'user_id': user_id,
+                'username': username,
+                'subscriptions': [
+                    {
+                        'plan': plan_type,
+                        'timestamp': timestamp
+                    }
+                ]
+            }
+        else:
+            user_entry = subscriptions[user_key]
+
+            # Preserve existing metadata; only fill in blanks when available.
+            user_entry.setdefault('user_id', user_id)
+            if username and not user_entry.get('username'):
+                user_entry['username'] = username
+
+            plan_history = user_entry.get('subscriptions')
+            if not isinstance(plan_history, list):
+                plan_history = []
+                user_entry['subscriptions'] = plan_history
+
+            if any(entry.get('plan') == plan_type for entry in plan_history if isinstance(entry, dict)):
+                # Duplicate selection; leave storage untouched.
+                return
+
+            plan_history.append({
+                'plan': plan_type,
+                'timestamp': timestamp
+            })
 
         serialized = json.dumps(subscriptions, indent=2, ensure_ascii=False)
         async with aiofiles.open(PLAN_SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
