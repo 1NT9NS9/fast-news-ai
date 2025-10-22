@@ -93,7 +93,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - Tests cover valid/invalid cases; restore rejects traversal attempts.
 
-9) Dependency Bump: Protobuf and Requests (45–60m)
+9) Dependency Bump: Protobuf and Requests (45–60m) [Pass] - The changes break the app
 - Steps
   - Update `requirements.txt` to include: `protobuf>=6.31.1`, `requests>=2.31.0` (keeping compatibility with pinned Google SDKs).
   - Run local install; verify app still starts and `/news` basic path functions.
@@ -101,7 +101,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - App runs without import/runtime errors; versions reflect bump.
 
-10) Dependency Audit: pip‑audit (45–60m)
+10) Dependency Audit: pip‑audit (45–60m) [Complete]
 - Steps
   - Install and run `pip-audit` locally.
   - Address any CRITICAL/HIGH findings that are safe to pin within current stack.
@@ -110,7 +110,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - No critical outstanding findings or clear follow‑up plan documented.
 
-11) Logger: Secret Redaction + Safe Formatting (60–90m)
+11) Logger: Secret Redaction + Safe Formatting (60-90m) [Complete]
 - Steps
   - In `bot/utils/logger.py`, add filters to sanitize:
     - Gemini keys `AIza[\w-]{35}` → `[REDACTED_API_KEY]`.
