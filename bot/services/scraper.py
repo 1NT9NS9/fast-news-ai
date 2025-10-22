@@ -20,6 +20,7 @@ from telegram import Update
 from bot.utils.config import MAX_POSTS_PER_CHANNEL, DEFAULT_NEWS_TIME_LIMIT_HOURS
 from bot.utils.logger import setup_logging
 from bot.utils.validators import validate_channel_name, validate_scrape_url
+from bot.services import messenger as messenger_service
 
 logger, _ = setup_logging()
 
@@ -73,20 +74,33 @@ class ScraperService:
         Returns:
             tuple: (is_valid: bool, error_message: str or None)
         """
+        chat = update.effective_chat
+        chat_id = chat.id if chat else None
+
         try:
             canonical_channel = validate_channel_name(channel)
             scrape_url = validate_scrape_url(canonical_channel)
         except ValueError as exc:
             logger.info("Rejected channel during validation: %s", exc)
-            if update.message:
-                await update.message.reply_text(
+            if chat_id is not None:
+                await messenger_service.send_text(
+                    chat_id,
                     "Неверный формат канала. Используйте публичный Telegram ID вида @example."
                 )
             return False, str(exc)
 
-        validation_msg = await update.message.reply_text(
-            f"🔍 Проверяю доступность канала {canonical_channel}..."
-        )
+        validation_msg = None
+        if chat_id is not None:
+            validation_msg = await messenger_service.send_text(
+                chat_id,
+                f"🔍 Проверяю доступность канала {canonical_channel}..."
+            )
+
+        async def _update_status(message_text: str) -> None:
+            if validation_msg is not None:
+                await validation_msg.edit_text(message_text)
+            elif chat_id is not None:
+                await messenger_service.send_text(chat_id, message_text)
 
         try:
             client = await self.get_http_client()
@@ -95,18 +109,18 @@ class ScraperService:
 
             if "tgme_channel_info" not in response.text and \
                "tgme_widget_message" not in response.text:
-                await validation_msg.edit_text(
+                await _update_status(
                     f"❌ Не удалось получить доступ к {canonical_channel}. "
                     "Канал может быть приватным или не существует."
                 )
                 return False, "Channel not accessible"
 
-            await validation_msg.edit_text(f"✅ Канал {canonical_channel} проверен и доступен!")
+            await _update_status(f"✅ Канал {canonical_channel} проверен и доступен!")
             return True, None
 
         except httpx.HTTPStatusError as e:
             logger.warning(f"Channel validation failed: HTTP {e.response.status_code}")
-            await validation_msg.edit_text(
+            await _update_status(
                 f"❌ Не удалось получить доступ к {canonical_channel}. "
                 "Канал может быть приватным или не существует."
             )
@@ -114,7 +128,7 @@ class ScraperService:
 
         except Exception as e:
             logger.error(f"Error validating channel: {e}", exc_info=True)
-            await validation_msg.edit_text(
+            await _update_status(
                 "😕 Произошла ошибка при проверке канала. Попробуйте позже."
             )
             return False, str(e)

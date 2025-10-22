@@ -38,8 +38,6 @@ async def _reply_text(
         send_kwargs["reply_markup"] = reply_markup
     if message_obj is not None:
         send_kwargs.setdefault("reply_to_message_id", message_obj.message_id)
-    elif update.message is not None:
-        send_kwargs.setdefault("reply_to_message_id", update.message.message_id)
     return await messenger_service.send_text(chat.id, text, **send_kwargs)
 
 
@@ -153,13 +151,13 @@ async def send_channel_list(update: Update, user_id: int, reply_markup=None, mes
         update: Telegram Update object
         user_id: User ID
         reply_markup: Optional keyboard markup to include
-        message_obj: Optional message object (for query.message), defaults to update.message
+        message_obj: Optional message object (for query.message)
         processing_msg: Optional processing message to delete after sending
     """
     storage = StorageService()
     data = await storage.load_user_data()
     user_id_str = str(user_id)
-    msg = message_obj or update.message
+    msg = message_obj
 
     if user_id_str not in data:
         if processing_msg:
