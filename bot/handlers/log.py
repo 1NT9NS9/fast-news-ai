@@ -81,9 +81,10 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         stats = await _parse_log_file()
         queue_metrics = await _gather_queue_metrics()
+        system_metrics = await _gather_system_metrics()
 
         # Format and send response
-        message = _format_statistics(stats, queue_metrics)
+        message = _format_statistics(stats, queue_metrics, system_metrics)
         await _send_reply(update, message, parse_mode='HTML')
 
     except FileNotFoundError:
@@ -168,6 +169,52 @@ async def _gather_queue_metrics() -> Optional[Dict[str, Any]]:
         return None
 
 
+async def _gather_system_metrics() -> Optional[Dict[str, Any]]:
+    """Collect current system resource metrics for the host running the bot."""
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        logger.debug("psutil is not installed; skipping system metrics collection.")
+        return None
+
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+    except Exception:  # pylint: disable=broad-except
+        cpu_percent = None
+
+    load_avg: Optional[List[float]] = None
+    try:
+        load_avg_tuple = psutil.getloadavg()  # type: ignore[attr-defined]
+        load_avg = [round(value, 2) for value in load_avg_tuple]
+    except (AttributeError, OSError):
+        load_avg = None
+
+    try:
+        virtual_mem = psutil.virtual_memory()
+    except Exception:  # pylint: disable=broad-except
+        virtual_mem = None
+
+    try:
+        swap_mem = psutil.swap_memory()
+    except Exception:  # pylint: disable=broad-except
+        swap_mem = None
+
+    disk_path = os.getenv("SYSTEM_METRICS_DISK_PATH", os.path.abspath(os.sep))
+    try:
+        disk_usage = psutil.disk_usage(disk_path)
+    except Exception:  # pylint: disable=broad-except
+        disk_usage = None
+
+    return {
+        "cpu_percent": cpu_percent,
+        "load_avg": load_avg,
+        "memory": virtual_mem,
+        "swap": swap_mem,
+        "disk": disk_usage,
+        "disk_path": disk_path,
+    }
+
+
 def _normalize_action(action_text: str) -> str:
     """Normalize action text for grouping similar actions.
 
@@ -225,7 +272,11 @@ def _normalize_action(action_text: str) -> str:
     return action
 
 
-def _format_statistics(stats: Dict, queue_metrics: Optional[Dict[str, Any]] = None) -> str:
+def _format_statistics(
+    stats: Dict,
+    queue_metrics: Optional[Dict[str, Any]] = None,
+    system_metrics: Optional[Dict[str, Any]] = None,
+) -> str:
     """Format statistics into a readable message."""
     unique_users = stats["unique_users"]
     actions = stats["actions"]
@@ -239,6 +290,10 @@ def _format_statistics(stats: Dict, queue_metrics: Optional[Dict[str, Any]] = No
         "",
         f"<b>Unique users:</b> {len(unique_users)}",
     ]
+
+    if system_metrics is not None:
+        message_lines.append("")
+        message_lines.extend(_format_system_metrics(system_metrics))
 
     if queue_metrics is not None:
         message_lines.append("")
@@ -306,3 +361,62 @@ def _format_queue_metrics(metrics: Dict[str, Any]) -> List[str]:
         lines.append(f"- Highest per-chat delay: {worst_delay:.2f}s (chat {worst_chat})")
 
     return lines
+
+
+def _format_system_metrics(metrics: Dict[str, Any]) -> List[str]:
+    """Format host system metrics for display in /log output."""
+    lines: List[str] = ["<b>Server Metrics</b>"]
+
+    cpu_percent = metrics.get("cpu_percent")
+    if cpu_percent is not None:
+        lines.append(f"- CPU usage: {cpu_percent:.1f}%")
+    else:
+        lines.append("- CPU usage: unavailable")
+
+    load_avg = metrics.get("load_avg")
+    if load_avg:
+        formatted = "/".join(f"{value:.2f}" for value in load_avg)
+        lines.append(f"- Load avg (1m/5m/15m): {formatted}")
+
+    memory = metrics.get("memory")
+    if memory is not None:
+        lines.append(
+            "- RAM used: "
+            f"{_human_bytes(memory.used)} / {_human_bytes(memory.total)} "
+            f"({memory.percent:.1f}%)"
+        )
+    else:
+        lines.append("- RAM used: unavailable")
+
+    swap = metrics.get("swap")
+    if swap is not None and getattr(swap, "total", 0) > 0:
+        lines.append(
+            "- Swap used: "
+            f"{_human_bytes(swap.used)} / {_human_bytes(swap.total)} "
+            f"({swap.percent:.1f}%)"
+        )
+
+    disk = metrics.get("disk")
+    disk_path = metrics.get("disk_path", os.path.abspath(os.sep))
+    if disk is not None:
+        lines.append(
+            f"- Disk ({disk_path}): "
+            f"{_human_bytes(disk.used)} / {_human_bytes(disk.total)} "
+            f"({disk.percent:.1f}%)"
+        )
+    else:
+        lines.append(f"- Disk ({disk_path}): unavailable")
+
+    return lines
+
+
+def _human_bytes(num_bytes: float) -> str:
+    """Convert byte counts to a short, human-readable string."""
+    step = 1024.0
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    value = float(num_bytes)
+    for unit in units:
+        if value < step:
+            return f"{value:.1f} {unit}"
+        value /= step
+    return f"{value:.1f} PiB"

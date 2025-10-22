@@ -13,3 +13,4 @@ anyio==4.3.0            # Async compatibility layer
 pytest-asyncio==0.21.1  # Async testing support
 pytest-tornasync==0.6.0.post2  # Tornado async testing
 pytest-trio==0.8.0      # Trio async testing
+psutil==5.9.8           # System metrics collection for admin /log command
