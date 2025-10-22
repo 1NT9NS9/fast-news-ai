@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.utils.config import MAX_CHANNELS, MAX_NEWS_TIME_LIMIT_HOURS, MAX_SUMMARY_POSTS_LIMIT
 from bot.utils.logger import setup_logging
+from bot.utils.validators import validate_channel_name
 from bot.services import StorageService, ScraperService
 from bot.services import messenger as messenger_service
 
@@ -278,15 +279,12 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await _reply_text(update, "❌ Укажите название канала. Например: /add @channelname")
         return
 
-    channel = context.args[0]
+    raw_channel = context.args[0]
 
-    # Normalize channel name: remove multiple @ symbols
-    while channel.startswith('@@'):
-        channel = channel[1:]
-
-    # Validate channel format (should start with @)
-    if not channel.startswith('@'):
-        await _reply_text(update, "❌ Название канала должно начинаться с @")
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError as exc:
+        await _reply_text(update, f"Invalid channel identifier: {exc}")
         return
 
     # Get current user channels (from active folder)
@@ -333,7 +331,13 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
         await _reply_text(update, "❌ Укажите название канала. Например: /remove @channelname")
         return
 
-    channel = context.args[0]
+    raw_channel = context.args[0]
+
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError as exc:
+        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        return
 
     # Get current user channels
     channels = await storage.get_user_channels(user_id)
@@ -599,15 +603,12 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
 
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
-    channel = update.message.text.strip()
+    raw_channel = (update.message.text or "").strip()
 
-    # Normalize channel name: remove multiple @ symbols
-    while channel.startswith('@@'):
-        channel = channel[1:]
-
-    # Validate channel format (should start with @)
-    if not channel.startswith('@'):
-        await _reply_text(update, "❌ Название канала должно начинаться с @")
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError as exc:
+        await _reply_text(update, f"Invalid channel identifier: {exc}")
         return WAITING_FOR_CHANNEL_ADD
 
     # Get current user channels (from active folder)
@@ -677,7 +678,13 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
 
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
-    channel = update.message.text.strip()
+    raw_channel = (update.message.text or "").strip()
+
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError as exc:
+        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        return WAITING_FOR_CHANNEL_REMOVE
 
     # Get current user channels
     channels = await storage.get_user_channels(user_id)

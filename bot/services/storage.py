@@ -10,12 +10,14 @@ Handles all file I/O operations for user data and channel feeds:
 """
 
 import os
+import re
 import shutil
 import json
 import asyncio
 import aiofiles
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
+from pathlib import Path
 
 from bot.utils.config import (
     USER_DATA_FILE, CHANNEL_FEED_FILE, PLAN_SUBSCRIPTIONS_FILE, USER_DATA_BACKUP_DIR,
@@ -27,6 +29,8 @@ from bot.utils.logger import setup_logging
 from bot.models.user_data import migrate_user_data_to_folders, validate_user_data
 
 logger, _ = setup_logging()
+
+BACKUP_FILENAME_PATTERN = re.compile(r'^user_data_\d{8}_\d{6}\.json$')
 
 
 class StorageService:
@@ -601,20 +605,42 @@ class StorageService:
 
     async def restore_user_data_from_backup(self, backup_path: str) -> Dict:
         """Restore user data from a selected backup file."""
+        backups_dir = Path(USER_DATA_BACKUP_DIR).resolve()
+        candidate_path = Path(backup_path)
+        if not candidate_path.is_absolute():
+            candidate_path = Path.cwd() / candidate_path
+        try:
+            resolved_path = candidate_path.resolve(strict=False)
+        except OSError as exc:
+            raise ValueError(f'Invalid backup path: {backup_path}') from exc
+
+        try:
+            relative_path = resolved_path.relative_to(backups_dir)
+        except ValueError as exc:
+            raise ValueError('Backup file must reside within the backups directory.') from exc
+
+        if len(relative_path.parts) != 1:
+            raise ValueError('Backup file must reside directly within the backups directory.')
+
+        if not BACKUP_FILENAME_PATTERN.fullmatch(relative_path.name):
+            raise ValueError('Invalid backup filename provided.')
+
+        safe_backup_path = str(resolved_path)
+
         async with self._cache_lock:
             await self.backup_user_data()
             try:
-                async with aiofiles.open(backup_path, 'r', encoding='utf-8') as src:
+                async with aiofiles.open(safe_backup_path, 'r', encoding='utf-8') as src:
                     raw_content = await src.read()
             except FileNotFoundError as exc:
-                raise FileNotFoundError(f'Backup file not found: {backup_path}') from exc
+                raise FileNotFoundError(f'Backup file not found: {safe_backup_path}') from exc
             except OSError as exc:
-                raise OSError(f'Failed to read backup {backup_path}: {exc}') from exc
+                raise OSError(f'Failed to read backup {safe_backup_path}: {exc}') from exc
 
             try:
                 restored_data = json.loads(raw_content)
             except json.JSONDecodeError as exc:
-                raise ValueError(f'Backup file is not valid JSON: {backup_path}') from exc
+                raise ValueError(f'Backup file is not valid JSON: {safe_backup_path}') from exc
 
             restored_data = migrate_user_data_to_folders(restored_data)
 
@@ -627,7 +653,7 @@ class StorageService:
             self._user_data_cache = restored_data
             await self._invalidate_user_channel_cache()
 
-        logger.info('User data restored from backup %s', backup_path)
+        logger.info('User data restored from backup %s', relative_path.name)
         return restored_data
 
     async def _attempt_auto_restore_user_data(self, reason: str) -> Optional[Dict]:

@@ -1,5 +1,7 @@
 # JSON → SQLite Migration Plan
 
+# PostgreSQL + Redis + MongoDB/Elasticsearch (разделение нагрузки: PostgreSQL для транзакций, MongoDB для гибких/больших данных, Redis для кэширования).
+
 ## 1. Objectives & Success Criteria
 - Replace `user_data.json` writes with a SQLite-backed store without data loss or user-visible regression.
 - Preserve existing behavior (folders, rate limiting, backups) while unlocking transactional safety and concurrent access.

@@ -208,8 +208,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ваш тариф: Free\n\n"
             "Тарифы:\n"
             "• Free: 10 каналов | 2 папки | 3 /news в день | время 1ч-7д\n"
-            "• Plus: 25 каналов | 3 папки | 4 /news в день | время 1ч-1м\n"
-            "• Pro:  50 каналов | 5 папок | 5 /news в день | время 1ч-2м\n"
+            "• Plus: 25 каналов | 3 папки | 4 /news в день | время 1ч-14д\n"
+            "• Pro:  50 каналов | 5 папок | 5 /news в день | время 1ч-30д\n"
             "• Enterprise: Хотите увеличить временной интервал или другие параметры, напишите @fast_news_ai_admin"
         )
 
