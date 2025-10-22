@@ -24,8 +24,8 @@ bot_user.log
 # User data and backups
 user_data.json
 user_data_backup_*.json
-channel_feed.json
-plan_subscriptions.json
+user_channel.json
+user_subs.json
 .claude/
 backups/
 bot.py.backup

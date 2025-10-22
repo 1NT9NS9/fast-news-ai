@@ -46,8 +46,8 @@ GEMINI_EMBEDDING_CONCURRENT_LIMIT: int = _get_int_env('GEMINI_EMBEDDING_CONCURRE
 
 # File paths
 USER_DATA_FILE: str = 'user_data.json'
-CHANNEL_FEED_FILE: str = 'channel_feed.json'
-PLAN_SUBSCRIPTIONS_FILE: str = 'plan_subscriptions.json'
+CHANNEL_FEED_FILE: str = 'user_channel.json'
+PLAN_SUBSCRIPTIONS_FILE: str = 'user_subs.json'
 USER_DATA_BACKUP_DIR: str = os.path.join('backups', 'user_data')
 
 # Backup settings
