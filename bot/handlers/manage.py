@@ -284,7 +284,7 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         channel = validate_channel_name(raw_channel)
     except ValueError as exc:
-        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        await _reply_text(update, f"Неверный идентификатор канала: {exc}")
         return
 
     # Get current user channels (from active folder)
@@ -336,7 +336,7 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
     try:
         channel = validate_channel_name(raw_channel)
     except ValueError as exc:
-        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        await _reply_text(update, f"Неверный идентификатор канала: {exc}")
         return
 
     # Get current user channels
@@ -608,7 +608,7 @@ async def handle_add_channel_input(update: Update, context: ContextTypes.DEFAULT
     try:
         channel = validate_channel_name(raw_channel)
     except ValueError as exc:
-        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        await _reply_text(update, f"Неверный идентификатор канала: {exc}")
         return WAITING_FOR_CHANNEL_ADD
 
     # Get current user channels (from active folder)
@@ -683,7 +683,7 @@ async def handle_remove_channel_input(update: Update, context: ContextTypes.DEFA
     try:
         channel = validate_channel_name(raw_channel)
     except ValueError as exc:
-        await _reply_text(update, f"Invalid channel identifier: {exc}")
+        await _reply_text(update, f"Неверный идентификатор канала: {exc}")
         return WAITING_FOR_CHANNEL_REMOVE
 
     # Get current user channels

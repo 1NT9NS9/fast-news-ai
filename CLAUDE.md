@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Documentation:** [Architecture](docs/ARCHITECTURE.md) | [Domain Model](docs/DOMAIN.md) | [API Spec](docs/API_SPEC.yaml) | [Rate Limiter](docs/RATE_LIMITER.md)
+**Documentation:** [Architecture](docs/ARCHITECTURE.md) | [Domain Model](docs/DOMAIN.md) | [API Spec](docs/API_SPEC.yaml) | [Rate Limiter](docs/RATE_LIMITER.md) | [Security Notes (Phase 1)](docs/SECURITY_NOTES_PHASE1.md)
 
 ## What This Bot Does
 
@@ -87,7 +87,7 @@ MAX_POSTS_PER_CHANNEL = 20
 DEFAULT_NEWS_TIME_LIMIT_HOURS = 24
 MAX_NEWS_TIME_LIMIT_HOURS = 720
 DEFAULT_MAX_SUMMARY_POSTS = 10
-MAX_SUMMARY_POSTS_LIMIT = 30
+MAX_SUMMARY_POSTS_LIMIT = 10
 MAX_NEWS_REQUESTS_PER_DAY = 5
 SIMILARITY_THRESHOLD = 0.9
 GEMINI_CONCURRENT_LIMIT = 4000
@@ -98,6 +98,10 @@ EMBEDDING_MAX_TOKENS = 400
 ```
 
 AIService pulls model IDs (`GEMINI_EMBEDDING_MODEL`, `gemini-embedding-001` default) and output dimensions from config, truncates inputs using a 3 chars/token heuristic, and enforces RPM/semaphore limits per embedding call.
+
+## Security Notes
+
+- Phase 1 rollout details, operator guidance, and rollback steps live in `docs/SECURITY_NOTES_PHASE1.md`.
 
 ## Data Storage
 
@@ -176,4 +180,3 @@ docker logs -f keytime-bot
 - Rollout flag ENABLE_RATE_LIMITED_QUEUE (see README.md) toggles between queued + direct-send modes; messenger falls back automatically when disabled.
 - Manual validation script (scripts/validate_rate_limiter.py) stress-tests the queue and prints pacing metrics.
 - Automated tests: 	tests/ 
-

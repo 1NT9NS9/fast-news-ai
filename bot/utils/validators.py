@@ -35,14 +35,14 @@ def validate_channel_name(name: str) -> str:
 
     candidate = name.strip()
     if not candidate:
-        raise ValueError("Channel name cannot be empty.")
+        raise ValueError("Название канала не может быть пустым.")
     if "://" in candidate:
-        raise ValueError("Channel name must not contain a URL scheme.")
+        raise ValueError("Название канала не должно содержать схему URL")
 
     if not _CHANNEL_PATTERN.fullmatch(candidate):
         raise ValueError(
-            "Channel name must be 5-32 characters: letters, digits, or underscore, "
-            "and may start with '@'."
+            "Название канала должно содержать от 5 до 32 символов:"
+            "букв, цифр или подчеркивания. Должно начинаться с «@»."
         )
 
     # Remove leading '@' if present so we can canonicalize it.

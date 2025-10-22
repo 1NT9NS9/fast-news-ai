@@ -33,12 +33,10 @@ async def test_start_command_uses_messenger(monkeypatch):
 
     await start.start_command(update, context)
 
-    assert send_mock.await_count == 2
+    assert send_mock.await_count == 1
     first_call = send_mock.await_args_list[0]
-    second_call = send_mock.await_args_list[1]
     assert first_call.args[0] == 900
-    assert second_call.args[0] == 900
-    assert "Выберите действие" in second_call.args[1]
+    assert "Привет" in first_call.args[1]
 
 
 @pytest.mark.asyncio

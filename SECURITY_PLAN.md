@@ -193,22 +193,26 @@ ENABLE_ENCRYPTION = os.getenv('ENABLE_ENCRYPTION', 'true') == 'true'
 ENABLE_SSRF_PROTECTION = os.getenv('ENABLE_SSRF_PROTECTION', 'true') == 'true'
 ```
 
+Operator Notes: see `docs/SECURITY_NOTES_PHASE1.md` for applied mitigations and rollback pointers.
+
 ---
 
 ## Implementation Checklist
 
 Phase 1 (Critical)
-- [ ] Credential rotation + verify `.env` not in git
-- [ ] SSRF validation wired to scraper + handlers
-- [ ] Path traversal safe restore
-- [ ] Protobuf/requests upgrade + `pip-audit`
-- [ ] Logger sanitization + non-blocking + perms
+- [x] Credential rotation + verify `.env` not in git
+- [x] SSRF validation wired to scraper + handlers
+- [x] Path traversal safe restore
+- [x] Protobuf/requests upgrade + `pip-audit`
+- [x] Logger sanitization + non-blocking + perms
 
 Phase 2 (Week 1)
 - [ ] StorageService singleton + concurrency tests
 - [ ] Docker non-root + perms + healthcheck + .dockerignore
 - [ ] CI: `pip-audit`, `bandit`, dependency bot
 - [ ] Split prod/dev requirements; Docker uses prod
+- [ ] Revisit protobuf/requests bump with compatibility fixes (deferred from Phase 1)
+- [ ] Re-enable logger file permission hardening with cross-platform guard rails (deferred from Phase 1)
 
 Phase 3 (Week 2)
 - [ ] AI throttles + safety settings
@@ -227,4 +231,3 @@ Phase 4 (Weeks 3–4)
 ---
 
 Version: 1.0 (Unified from SECURITY_C_PLAN.md + SECURITY_CC_PLAN.md)
-

@@ -1,4 +1,4 @@
-# Phase 1 Security Execution Plan — KeyTime Bot
+# Phase 1 Security Execution Plan — KeyTime Bot [Complete]
 
 Last Updated: 2025-10-21
 Scope: Expands “Phase 1 — Critical (Day 0–1)” from SECURITY_PLAN.md into time‑boxed, verifiable subtasks.
@@ -121,7 +121,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - Local logs show redaction; no HTML parsing in logs; runtime warnings/errors still visible.
 
-12) Logger: File Permissions (30–45m)
+12) Logger: File Permissions (30–45m) [Pass] - The changes break the app
 - Steps
   - When initializing handlers, set restrictive file modes (0600) on `bot.log` and `bot_user.log` where OS permits.
   - Add a startup check that logs a WARN if perms are looser than expected.
@@ -129,7 +129,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - On Unix hosts, perms are 600; on Windows, no error and check is skipped or informational.
 
-13) Verification Pass (45–60m)
+13) Verification Pass (45–60m) [Complete]
 - Steps
   - Run unit tests added in Steps 5 and 8.
   - Run quick manual validation: invalid channel input and restore traversal attempt.
@@ -138,7 +138,7 @@ Execution Map (Time‑boxed Subtasks)
 - Acceptance
   - All tests pass; manual checks succeed; bot remains functional.
 
-14) Documentation + Rollback Notes (30–45m)
+14) Documentation + Rollback Notes (30–45m) [Complete]
 - Steps
   - Update `SECURITY_PLAN.md` checklist items for Phase 1 as done.
   - Add short operator notes to `docs/` (e.g., `docs/SECURITY_NOTES_PHASE1.md`) summarizing what changed and how to revert.

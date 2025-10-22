@@ -43,7 +43,7 @@ def create_main_menu():
         [InlineKeyboardButton("📁 Управление папками", callback_data='manage_folders')],
         [InlineKeyboardButton("➕ Добавить канал", callback_data='add_channel'), InlineKeyboardButton("➖ Удалить канал", callback_data='remove_channel')],
         [InlineKeyboardButton("📋 Список каналов", callback_data='list_channels')],
-        [InlineKeyboardButton("⏰ Временной диапазон", callback_data='time_interval'), InlineKeyboardButton("📊 Количество новостей", callback_data='news_count')],
+        [InlineKeyboardButton("⏰ Время", callback_data='time_interval'), InlineKeyboardButton("📊 Количество", callback_data='news_count')],
         [InlineKeyboardButton("🔥Лента новостей", callback_data='news_feed')],
         [InlineKeyboardButton("⭐️ Для владельцев каналов", callback_data='for_channel_owners')],
         [InlineKeyboardButton("🗑️ Удалить все каналы", callback_data='remove_all')]

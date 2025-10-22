@@ -2,7 +2,7 @@
 
 Modularized Telegram news aggregation bot (v2.0) - see `CLAUDE.md` for complete documentation.
 
-**Documentation:** [Architecture](../docs/ARCHITECTURE.md) | [Domain Model](../docs/DOMAIN.md) | [API Spec](../docs/API_SPEC.yaml)
+**Documentation:** [Architecture](../docs/ARCHITECTURE.md) | [Domain Model](../docs/DOMAIN.md) | [API Spec](../docs/API_SPEC.yaml) | [Rate Limiter](../docs/RATE_LIMITER.md) | [Security Notes (Phase 1)](../docs/SECURITY_NOTES_PHASE1.md)
 
 ## Architecture
 
@@ -23,7 +23,7 @@ bot/
   - user_data.py       # Validation and migration
 - utils/
   - config.py          # Environment vars and constants
-  - logger.py          # Logging setup
+  - logger.py          # Logging setup and sanitization
 ```
 
 ## Core Services
@@ -40,7 +40,7 @@ bot/
 - Filters posts < 50 chars, normalizes timestamps to UTC
 
 ### AIService (`services/ai.py`)
-- Embeddings: `gemini-embedding-001` via `google.genai.Client` (configurable 768/1536/3072 dims, 100 texts/batch default, RPM-governed with per-vector validation)
+- Embeddings: `gemini-embedding-001` via `google.genai.Client` (configurable 768/1536/3072 dims, 50 texts/batch default, RPM-governed with per-vector validation)
 - Summarization: `gemini-flash-lite-latest` through `google-generativeai` (temperature 0.3, 500 tokens max)
 - Separate semaphores, RPM limiter, and exponential backoff retries
 
@@ -59,9 +59,9 @@ bot/
 - `GEMINI_EMBEDDING_MODEL` - Embedding model ID (`gemini-embedding-001` default)
 - `EMBEDDING_OUTPUT_DIM` - Output dimensionality (default 768; supports 1536/3072)
 - `EMBEDDING_TASK_TYPE` - Embedding task type (`retrieval_document` default)
-- `EMBEDDING_TEXTS_PER_BATCH` - Texts per embedding batch (default 100)
-- `EMBEDDING_RPM` - Embedding requests per minute cap (default 60)
-- `EMBEDDING_MAX_TOKENS` - Token budget per text before truncation (default 450)
+- `EMBEDDING_TEXTS_PER_BATCH` - Texts per embedding batch (default 50)
+- `EMBEDDING_RPM` - Embedding requests per minute cap (default 3000)
+- `EMBEDDING_MAX_TOKENS` - Token budget per text before truncation (default 400)
 - `GEMINI_EMBEDDING_CONCURRENT_LIMIT` - Semaphore limit for embedding calls (default 32)
 - Copy `.env.example` to `.env` and fill in the required keys before running the bot.
 
@@ -70,6 +70,7 @@ bot/
 - `MAX_POSTS_PER_CHANNEL = 20`
 - `MAX_NEWS_REQUESTS_PER_DAY = 5`
 - `SIMILARITY_THRESHOLD = 0.9`
+- `MAX_SUMMARY_POSTS_LIMIT = 10`
 
 ## `/news` Workflow
 
@@ -88,6 +89,11 @@ bot/
 - Async I/O via `aiofiles` and `httpx.AsyncClient`
 - Batched embeddings and parallel summarization
 - Immediate button feedback for snappy UX
+
+## Security Operations
+
+- Phase 1 rollout summary, operator guidance, and rollback steps live in `../docs/SECURITY_NOTES_PHASE1.md`.
+- Rate limiter behavior and validation tooling documented in `../docs/RATE_LIMITER.md`.
 
 ## Development
 

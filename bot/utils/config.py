@@ -83,7 +83,7 @@ DEFAULT_NEWS_TIME_LIMIT_HOURS: int = 24  # Default time range for news
 MAX_NEWS_TIME_LIMIT_HOURS: int = 720  # Maximum allowed time range (30 days)
 DEFAULT_MAX_SUMMARY_POSTS: int = 10  # Default number of news summaries
 MAX_SUMMARY_POSTS_LIMIT: int = 10  # Maximum allowed summaries
-MAX_NEWS_REQUESTS_PER_DAY: int = 5  # Rate limit for /news command
+MAX_NEWS_REQUESTS_PER_DAY: int = 3  # Rate limit for /news command
 
 # Rate limiter defaults
 GLOBAL_RATE_MESSAGES_PER_SEC: int = 30
