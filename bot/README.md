@@ -68,13 +68,13 @@ bot/
 **Key Limits:**
 - `MAX_CHANNELS = 10` (per user)
 - `MAX_POSTS_PER_CHANNEL = 20`
-- `MAX_NEWS_REQUESTS_PER_DAY = 5`
+- `MAX_NEWS_REQUESTS_PER_DAY = 3`
 - `SIMILARITY_THRESHOLD = 0.9`
 - `MAX_SUMMARY_POSTS_LIMIT = 10`
 
 ## `/news` Workflow
 
-1. Check rate limit (5/day)
+1. Check rate limit (3/day)
 2. Load active folder channels
 3. Scrape channels in parallel
 4. Embed batched posts (configurable model/output dim)
