@@ -176,10 +176,14 @@ def setup_logging(bot_token: Optional[str] = None, admin_chat_id: Optional[int] 
     root_logger = logging.getLogger()
 
     if not _ROOT_LOGGING_INITIALIZED:
+        # Ensure logs directory exists
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
         file_formatter = SafeFormatter("%(asctime)s - %(levelname)s - %(message)s")
         console_formatter = SafeFormatter("%(levelname)s - %(message)s")
 
-        file_handler = logging.FileHandler("bot.log", encoding="utf-8")
+        file_handler = logging.FileHandler(log_dir / "bot.log", encoding="utf-8")
         file_handler.setFormatter(file_formatter)
 
         stream_handler = logging.StreamHandler()
@@ -213,9 +217,13 @@ def setup_logging(bot_token: Optional[str] = None, admin_chat_id: Optional[int] 
     # Create separate logger for user interactions once
     user_logger = logging.getLogger("user_interactions")
     if not _USER_LOGGER_INITIALIZED:
+        # Ensure logs directory exists
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
         user_logger.setLevel(logging.INFO)
         user_logger.handlers.clear()
-        user_handler = logging.FileHandler("bot_user.log", encoding="utf-8")
+        user_handler = logging.FileHandler(log_dir / "bot_user.log", encoding="utf-8")
         user_handler.setFormatter(SafeFormatter("%(asctime)s - %(message)s"))
         user_logger.addHandler(user_handler)
         user_logger.propagate = False
