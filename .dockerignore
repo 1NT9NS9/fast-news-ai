@@ -48,7 +48,19 @@ Thumbs.db
 # Development documentation (exclude from Docker)
 CLAUDE.md
 AGENTS.md
+DEPLOYMENT.md
+README.md
 
 # Docker
 Dockerfile
 .dockerignore
+docker-compose.yml
+deploy.sh
+
+# Deployment data directories (mounted as volumes)
+data/
+logs/
+
+# Scripts and tests
+scripts/
+tests/

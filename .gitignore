@@ -16,7 +16,6 @@ ENV/
 # Environment variables
 .env
 .env.local
-.env.example
 
 # Logs
 *.log
@@ -32,6 +31,10 @@ user_subs.json
 backups/
 bot.py.backup
 docs/
+
+# Docker deployment data directories
+data/
+logs/
 
 # IDE
 .vscode/
