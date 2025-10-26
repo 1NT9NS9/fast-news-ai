@@ -83,7 +83,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Created Папка1 for new user {user_id}")
 
     welcome_message = (
-        "⭐️ Привет! Я ваш личный доставщик новостей!\n"
+        "⭐️ Здравствуйте, я ваш личный доставщик новостей!\n"
         "• Не хватает времени прочитать все telegram каналы?\n"
         "• Устали читать одну и туже новость в разных каналах?\n"
         "• Информационный шум вызывает тревожность?\n\n"
