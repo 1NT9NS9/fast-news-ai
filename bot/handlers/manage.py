@@ -274,7 +274,7 @@ async def add_channel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Check if channel name is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /add (no channel specified)")
-        await _reply_text(update, "❌ Укажите название канала. Например: /add @channelname")
+        await _reply_text(update, "❌ Укажите название канала. Например: /add @channelname или /add https://t.me/channelname")
         return
 
     raw_channel = context.args[0]
@@ -326,7 +326,7 @@ async def remove_channel_command(update: Update, context: ContextTypes.DEFAULT_T
     # Check if channel name is provided
     if not context.args:
         user_logger.info(f"User_{user_id} (@{username}) clicked /remove (no channel specified)")
-        await _reply_text(update, "❌ Укажите название канала. Например: /remove @channelname")
+        await _reply_text(update, "❌ Укажите название канала. Например: /remove @channelname или /remove https://t.me/channelname")
         return
 
     raw_channel = context.args[0]

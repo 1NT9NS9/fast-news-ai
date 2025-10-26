@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 _CHANNEL_PATTERN = re.compile(r"^@?[A-Za-z0-9_]{5,32}$")
 _SCRAPE_BASE_URL = "https://t.me/s/"
+_TME_HOSTNAMES = frozenset({"t.me", "telegram.me"})
+_TME_PREFIXES = tuple(f"{host}/" for host in _TME_HOSTNAMES)
 
 
 def validate_channel_name(name: str) -> str:
@@ -36,18 +38,49 @@ def validate_channel_name(name: str) -> str:
     candidate = name.strip()
     if not candidate:
         raise ValueError("Название канала не может быть пустым.")
-    if "://" in candidate:
-        raise ValueError("Название канала не должно содержать схему URL")
 
-    if not _CHANNEL_PATTERN.fullmatch(candidate):
+    lower_candidate = candidate.lower()
+    slug: str
+
+    if any(lower_candidate.startswith(prefix) for prefix in _TME_PREFIXES):
+        slug = candidate.split("/", 1)[1].strip().strip("/")
+        if not slug:
+            raise ValueError("Ссылка на канал должна содержать название канала.")
+        if "/" in slug:
+            raise ValueError("Ссылка на канал должна вести на сам канал, а не на пост.")
+    elif lower_candidate.startswith(("http://", "https://")):
+        parsed = urlsplit(candidate)
+        hostname = (parsed.hostname or "").lower()
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        if hostname not in _TME_HOSTNAMES:
+            raise ValueError("Ссылка на канал должна вести на t.me.")
+
+        slug = parsed.path.lstrip("/").rstrip("/")
+        if not slug:
+            raise ValueError("Ссылка на канал должна содержать название канала.")
+        if "/" in slug:
+            raise ValueError("Ссылка на канал должна вести на сам канал, а не на пост.")
+        if parsed.query or parsed.fragment:
+            raise ValueError("Ссылка на канал не должна содержать параметры или якоря.")
+    else:
+        if "://" in candidate:
+            raise ValueError("Название канала не должно содержать схему URL")
+        slug = candidate
+
+    slug = slug.lstrip("@")
+    if not slug:
+        raise ValueError("Название канала не может быть пустым.")
+
+    canonical = f"@{slug}"
+
+    if not _CHANNEL_PATTERN.fullmatch(canonical):
         raise ValueError(
             "Название канала должно содержать от 5 до 32 символов:"
-            "букв, цифр или подчеркивания. Должно начинаться с «@»."
+            "буквы, цифры и подчёркивания. Используйте формат с символом '@'."
         )
 
-    # Remove leading '@' if present so we can canonicalize it.
-    normalized = candidate.lstrip("@")
-    return f"@{normalized}"
+    return canonical
 
 
 def validate_scrape_url(channel: str) -> str:

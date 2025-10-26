@@ -6,6 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.utils.config import ADMIN_CHAT_ID, MAX_SUMMARY_POSTS_LIMIT, MAX_NEWS_TIME_LIMIT_HOURS
+from bot.utils.validators import validate_channel_name
 from bot.utils.logger import setup_logging
 from bot.services import StorageService, ScraperService
 from bot.services import messenger as messenger_service
@@ -33,6 +34,8 @@ WAITING_FOR_REMOVE_FROM_FEED_CHANNEL = 8
 WAITING_FOR_REMOVE_FROM_FEED_REASON = 9
 WAITING_FOR_RESTRICT_ACCESS_CHANNEL = 10
 WAITING_FOR_RESTRICT_ACCESS_REASON = 11
+
+CHANNEL_FORMAT_HINT = "@channel01 или https://t.me/channel01"
 
 
 def create_main_menu():
@@ -221,7 +224,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await messenger_service.send_text(update.effective_chat.id, 
             "➕ Добавить канал\n\n"
             "Введите 1 канал в строку ввода.\n"
-            "Пример: @channel01"
+            "Пример: @channel01 или https://t.me/channel01"
         )
         return WAITING_FOR_CHANNEL_ADD
 
@@ -230,7 +233,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await messenger_service.send_text(update.effective_chat.id, 
             "➖ Удалить канал\n\n"
             "Введите 1 канал в строку ввода.\n"
-            "Пример: @channel01"
+            "Пример: @channel01 или https://t.me/channel01"
         )
         return WAITING_FOR_CHANNEL_REMOVE
 
@@ -306,7 +309,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await messenger_service.send_text(update.effective_chat.id, 
             "➕ Добавить канал в ленту\n\n"
             "Введите название канала:\n"
-            "Пример: @channels01"
+            "Пример: @channels01 или https://t.me/channels01"
         )
         return WAITING_FOR_ADD_TO_FEED_CHANNEL
 
@@ -315,7 +318,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await messenger_service.send_text(update.effective_chat.id, 
             "➖ Удалить канал из ленты\n\n"
             "Введите название канала:\n"
-            "Пример: @channels01"
+            "Пример: @channels01 или https://t.me/channels01"
         )
         return WAITING_FOR_REMOVE_FROM_FEED_CHANNEL
 
@@ -324,7 +327,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await messenger_service.send_text(update.effective_chat.id, 
             "🚫 Ограничить доступ\n\n"
             "Введите название канала:\n"
-            "Пример: @channels01"
+            "Пример: @channels01 или https://t.me/channels01"
         )
         return WAITING_FOR_RESTRICT_ACCESS_CHANNEL
 
@@ -483,16 +486,14 @@ async def handle_add_to_feed_channel(update: Update, context: ContextTypes.DEFAU
 
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
-    channel = update.message.text.strip()
+    raw_channel = (update.message.text or "").strip()
 
-    # Normalize channel name: remove multiple @ symbols
-    while channel.startswith('@@'):
-        channel = channel[1:]
-
-    # Validate channel format
-    if not channel.startswith('@'):
-        await messenger_service.send_text(update.effective_chat.id, 
-            "❌ Название канала должно начинаться с @\n"
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError:
+        await messenger_service.send_text(
+            update.effective_chat.id,
+            f"❌ Некорректный формат канала. Используйте {CHANNEL_FORMAT_HINT}.\n"
             "Попробуйте еще раз:"
         )
         return WAITING_FOR_ADD_TO_FEED_CHANNEL
@@ -588,16 +589,14 @@ async def handle_remove_from_feed_channel(update: Update, context: ContextTypes.
 
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
-    channel = update.message.text.strip()
+    raw_channel = (update.message.text or "").strip()
 
-    # Normalize channel name: remove multiple @ symbols
-    while channel.startswith('@@'):
-        channel = channel[1:]
-
-    # Validate channel format
-    if not channel.startswith('@'):
-        await messenger_service.send_text(update.effective_chat.id, 
-            "❌ Название канала должно начинаться с @\n"
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError:
+        await messenger_service.send_text(
+            update.effective_chat.id,
+            f"❌ Некорректный формат канала. Используйте {CHANNEL_FORMAT_HINT}.\n"
             "Попробуйте еще раз:"
         )
         return WAITING_FOR_REMOVE_FROM_FEED_CHANNEL
@@ -681,16 +680,14 @@ async def handle_restrict_access_channel(update: Update, context: ContextTypes.D
 
     user_id = update.effective_user.id
     username = update.effective_user.username or "unknown"
-    channel = update.message.text.strip()
+    raw_channel = (update.message.text or "").strip()
 
-    # Normalize channel name: remove multiple @ symbols
-    while channel.startswith('@@'):
-        channel = channel[1:]
-
-    # Validate channel format
-    if not channel.startswith('@'):
-        await messenger_service.send_text(update.effective_chat.id, 
-            "❌ Название канала должно начинаться с @\n"
+    try:
+        channel = validate_channel_name(raw_channel)
+    except ValueError:
+        await messenger_service.send_text(
+            update.effective_chat.id,
+            f"❌ Некорректный формат канала. Используйте {CHANNEL_FORMAT_HINT}.\n"
             "Попробуйте еще раз:"
         )
         return WAITING_FOR_RESTRICT_ACCESS_CHANNEL
