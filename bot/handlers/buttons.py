@@ -262,7 +262,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Чтобы изменить диапазон, введите:\n"
             f"• Количество часов (например: 24)\n"
             f"• Количество дней с буквой 'd' (например: 7d)\n"
-            f"Максимум: {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней)"
+            f"Максимум: {MAX_NEWS_TIME_LIMIT_HOURS} часов (7 дней)"
         )
         return WAITING_FOR_TIME_INTERVAL
 
