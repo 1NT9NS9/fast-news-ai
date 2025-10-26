@@ -5,6 +5,7 @@ Provides /log command for admins to view weekly user activity statistics.
 """
 import os
 import logging
+from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
@@ -99,6 +100,18 @@ async def log_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 
+def _resolve_user_log_path() -> Path:
+    """Return the path to bot_user.log, checking both legacy and new locations."""
+    candidates = [
+        Path("logs") / "bot_user.log",
+        Path("bot_user.log"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"Log file not found in any known location: {candidates}")
+
+
 async def _parse_log_file() -> Dict:
     """Parse bot_user.log and extract statistics for the last 7 days.
 
@@ -108,10 +121,7 @@ async def _parse_log_file() -> Dict:
             - actions: Dict mapping action name to count
             - date_range: Tuple of (start_date, end_date)
     """
-    log_file_path = 'bot_user.log'
-
-    if not os.path.exists(log_file_path):
-        raise FileNotFoundError(f"Log file not found: {log_file_path}")
+    log_file_path = _resolve_user_log_path()
 
     # Calculate date range (last 7 days)
     now = datetime.now()

@@ -144,11 +144,11 @@ pytest
 
 ## Data Persistence
 
-The bot stores data in JSON files:
+The bot stores data in JSON files inside the `data/` directory (override via `DATA_DIR` env var if needed):
 
-- `user_data.json` - User subscriptions and settings
-- `user_channel.json` - Channel feed metadata
-- `user_subs.json` - Subscription plans
+- `data/user_data.json` - User subscriptions and settings
+- `data/user_channel.json` - Channel feed metadata
+- `data/user_subs.json` - Subscription plans
 - `backups/` - Automatic backups (max 20, 7-day retention)
 
 In Docker deployment, these are stored in the `data/` directory with volume mounts for persistence.

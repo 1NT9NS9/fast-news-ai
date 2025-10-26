@@ -13,9 +13,7 @@ services:
     # Volume mounts for data persistence
     volumes:
       # User data files
-      - ./data/user_data.json:/app/user_data.json
-      - ./data/user_channel.json:/app/user_channel.json
-      - ./data/user_subs.json:/app/user_subs.json
+      - ./data:/app/data
 
       # Backups directory
       - ./data/backups:/app/backups

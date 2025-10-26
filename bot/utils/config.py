@@ -44,10 +44,18 @@ EMBEDDING_RPM: int = _get_int_env('EMBEDDING_RPM', 3000)
 EMBEDDING_MAX_TOKENS: int = _get_int_env('EMBEDDING_MAX_TOKENS', 400)
 GEMINI_EMBEDDING_CONCURRENT_LIMIT: int = _get_int_env('GEMINI_EMBEDDING_CONCURRENT_LIMIT', 32)
 
+# Data directory (for JSON persistence)
+DATA_DIR: str = os.getenv('DATA_DIR', 'data')
+
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except OSError as exc:
+    logger.warning('Failed to ensure data directory %s: %s', DATA_DIR, exc)
+
 # File paths
-USER_DATA_FILE: str = 'user_data.json'
-CHANNEL_FEED_FILE: str = 'user_channel.json'
-PLAN_SUBSCRIPTIONS_FILE: str = 'user_subs.json'
+USER_DATA_FILE: str = os.path.join(DATA_DIR, 'user_data.json')
+CHANNEL_FEED_FILE: str = os.path.join(DATA_DIR, 'user_channel.json')
+PLAN_SUBSCRIPTIONS_FILE: str = os.path.join(DATA_DIR, 'user_subs.json')
 USER_DATA_BACKUP_DIR: str = os.path.join('backups', 'user_data')
 
 # Backup settings
