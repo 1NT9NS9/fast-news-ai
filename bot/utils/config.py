@@ -88,9 +88,9 @@ except ValueError:
 MAX_CHANNELS: int = 10
 MAX_POSTS_PER_CHANNEL: int = 20
 DEFAULT_NEWS_TIME_LIMIT_HOURS: int = 24  # Default time range for news
-MAX_NEWS_TIME_LIMIT_HOURS: int = 720  # Maximum allowed time range (30 days)
-DEFAULT_MAX_SUMMARY_POSTS: int = 10  # Default number of news summaries
-MAX_SUMMARY_POSTS_LIMIT: int = 10  # Maximum allowed summaries
+MAX_NEWS_TIME_LIMIT_HOURS: int = 168  # Maximum allowed time range (7 days)
+DEFAULT_MAX_SUMMARY_POSTS: int = 5  # Default number of news summaries
+MAX_SUMMARY_POSTS_LIMIT: int = 15  # Maximum allowed summaries
 MAX_NEWS_REQUESTS_PER_DAY: int = 3  # Rate limit for /news command
 
 # Rate limiter defaults
@@ -102,6 +102,6 @@ HEAVY_LOAD_DELAY_THRESHOLD_SEC: float = 3.0
 ENABLE_RATE_LIMITED_QUEUE: bool = os.getenv("ENABLE_RATE_LIMITED_QUEUE", "true").lower() in {"1", "true", "yes"}
 
 # AI/Clustering settings
-SIMILARITY_THRESHOLD: float = 0.9
+SIMILARITY_THRESHOLD: float = 0.86
 GEMINI_API_RATE_LIMIT: int = 4000  # Gemini API rate limit: 4000 requests per minute
 GEMINI_CONCURRENT_LIMIT: int = 4000  # Max concurrent Gemini API requests

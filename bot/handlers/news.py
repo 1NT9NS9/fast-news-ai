@@ -210,14 +210,14 @@ async def news_command_internal(update: Update, context: ContextTypes.DEFAULT_TY
             if post_links:
                 # Create markdown links: [channel](url)
                 links_text = []
-                for link in post_links[:5]:  # Limit to first 5 links to avoid cluttering
+                for link in post_links[:]:  # [:5] Limit to first 5 links to avoid cluttering
                     channel_escaped = escape_markdown(link['channel'])
                     url_escaped = escape_markdown(link['url'])
                     links_text.append(f"[{channel_escaped}]({url_escaped})")
 
                 sources_line = ", ".join(links_text)
-                if len(post_links) > 5:
-                    sources_line += f" и еще {len(post_links) - 5}"
+                #if len(post_links) > 5:
+                #    sources_line += f" и еще {len(post_links) - 5}"
             else:
                 # Fallback to channel names without links
                 channels_text = ", ".join(summary['channels'][:3])
