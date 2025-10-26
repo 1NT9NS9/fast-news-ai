@@ -102,6 +102,6 @@ HEAVY_LOAD_DELAY_THRESHOLD_SEC: float = 3.0
 ENABLE_RATE_LIMITED_QUEUE: bool = os.getenv("ENABLE_RATE_LIMITED_QUEUE", "true").lower() in {"1", "true", "yes"}
 
 # AI/Clustering settings
-SIMILARITY_THRESHOLD: float = 0.86
+SIMILARITY_THRESHOLD: float = 0.87
 GEMINI_API_RATE_LIMIT: int = 4000  # Gemini API rate limit: 4000 requests per minute
 GEMINI_CONCURRENT_LIMIT: int = 4000  # Max concurrent Gemini API requests
