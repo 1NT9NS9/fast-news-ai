@@ -76,8 +76,8 @@ def create_channel_owner_menu():
 def create_plans_menu():
     """Create keyboard for subscription plans."""
     keyboard = [
-        [InlineKeyboardButton("Подключить Plus (1000 руб/месяц)", callback_data='connect_plus')],
-        [InlineKeyboardButton("Подключить Pro (2000 руб/месяц)", callback_data='connect_pro')],
+        [InlineKeyboardButton("Подключить Plus (499 руб/месяц)", callback_data='connect_plus')],
+        [InlineKeyboardButton("Подключить Pro (1999 руб/месяц)", callback_data='connect_pro')],
         [InlineKeyboardButton("Подключить Enterprise", callback_data='connect_enterprise')],
         [InlineKeyboardButton("🏠 Вернуться в меню", callback_data='return_to_menu')]
     ]
@@ -211,9 +211,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ваш тариф: Free\n"
             "3 /news в день\n\n"
             "Тарифы:\n"
-            "• Free: 10 каналов | 2 папки | 5 постов | время 1ч-7д\n"
-            "• Plus: 25 каналов | 5 папок | 10 постов | время 1ч-14д\n"
-            "• Pro:  50 каналов | 10 папок | 15 постов | время 1ч-30д\n"
+            "• Free: 7 каналов | 2 папки | 5 постов | время 1ч-3д\n"
+            "• Plus: 15 каналов | 4 папки | 10 постов | время 1ч-7д\n"
+            "• Pro:  60 каналов | 15 папок | 15 постов | время 1ч-30д\n"
             "* В тарифе Pro добавляйте по 10 каналов одновременно\n"
             "• Enterprise: Хотите увеличить временной интервал или другие параметры, напишите @fast_news_ai_admin"
         )
