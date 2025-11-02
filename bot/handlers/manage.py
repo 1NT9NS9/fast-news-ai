@@ -407,7 +407,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Чтобы изменить, используйте:\n"
             f"• /time <часы> (например: /time 24)\n"
             f"• /time <дни>d (например: /time 7d)\n"
-            f"Максимум: {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней)"
+            f"Максимум: {MAX_NEWS_TIME_LIMIT_HOURS} часов (7 дней)"
         )
         return
 
