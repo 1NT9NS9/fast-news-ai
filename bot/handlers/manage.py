@@ -434,7 +434,7 @@ async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_text(
 
                 update,
-                f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней)."
+                f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (7 дней)."
             )
             return
 
@@ -750,7 +750,7 @@ async def handle_time_interval_input(update: Update, context: ContextTypes.DEFAU
             await _reply_text(
 
                 update,
-                f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (30 дней).",
+                f"❌ Временной диапазон не может превышать {MAX_NEWS_TIME_LIMIT_HOURS} часов (7 дней).",
                 reply_markup=reply_markup
             )
             return ConversationHandler.END
