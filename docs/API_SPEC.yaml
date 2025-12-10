@@ -1,0 +1,974 @@
+openapi: 3.0.3
+info:
+  title: Keytime News Aggregation Telegram Bot API
+  version: 2.0.0
+  description: |
+    Telegram bot that monitors multiple channels and uses AI to consolidate duplicate news stories into a clean digest.
+
+    **Core Features:**
+    - Channel subscription management with folders
+    - AI-powered news aggregation and deduplication
+    - DBSCAN clustering for similar posts (0.9 similarity threshold)
+    - Gemini API integration for embeddings and summarization
+    - Rate limiting (5 requests/day per user)
+
+    **Technology Stack:**
+    - python-telegram-bot (v21.6)
+    - google-generativeai (v0.8.3) - text-embedding-004, gemini-flash-lite-latest
+    - scikit-learn (v1.5.2) - DBSCAN clustering
+    - httpx + beautifulsoup4 - Channel scraping
+
+servers:
+  - url: https://api.telegram.org/bot{bot_token}
+    description: Telegram Bot API
+    variables:
+      bot_token:
+        default: YOUR_BOT_TOKEN
+        description: Telegram Bot API token
+
+tags:
+  - name: Core Commands
+    description: Basic bot commands (/start, /help, /news)
+  - name: Channel Management
+    description: Add, remove, and list channels
+  - name: Settings
+    description: Configure time range and news count
+  - name: Folder Management
+    description: Create and manage channel folders
+  - name: Admin
+    description: Administrative commands
+  - name: Channel Owner Forms
+    description: Forms for channel owners to submit requests
+
+paths:
+  # ============================================================================
+  # Core Commands
+  # ============================================================================
+  /start:
+    post:
+      tags:
+        - Core Commands
+      summary: Initialize bot and show main menu
+      description: |
+        Initializes user with default settings and displays welcome message.
+        Creates "Папка1" (Folder1) for new users.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - Main menu displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartResponse'
+
+  /help:
+    post:
+      tags:
+        - Core Commands
+      summary: Show help message
+      description: Displays list of available commands and features
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - Help text displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpResponse'
+
+  /news:
+    post:
+      tags:
+        - Core Commands
+      summary: Fetch and aggregate news from subscribed channels
+      description: |
+        Scrapes channels, clusters similar posts, and generates AI summaries.
+
+        **Process:**
+        1. Scrape active folder channels (max 20 posts/channel)
+        2. Generate embeddings (batched, 100 at a time)
+        3. Cluster with DBSCAN (0.9 similarity)
+        4. Rank by cluster size
+        5. Generate AI summaries (parallel)
+        6. Format and deliver
+
+        **Rate Limit:** 5 requests per day (UTC timezone)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - News digest generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+
+  # ============================================================================
+  # Channel Management
+  # ============================================================================
+  /add:
+    post:
+      tags:
+        - Channel Management
+      summary: Add channel to active folder
+      description: |
+        Adds a Telegram channel to user's active folder.
+
+        **Constraints:**
+        - Channel must start with '@'
+        - Must be public channel
+        - Max 10 channels per user (across all folders)
+        - No duplicate channels allowed
+
+        **Example:** `/add @channelname`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddChannelRequest'
+      responses:
+        '200':
+          description: Success - Channel added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelOperationResponse'
+        '400':
+          description: Invalid channel format or channel limit reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /remove:
+    post:
+      tags:
+        - Channel Management
+      summary: Remove channel from active folder
+      description: |
+        Removes a channel from user's active folder.
+
+        **Example:** `/remove @channelname`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveChannelRequest'
+      responses:
+        '200':
+          description: Success - Channel removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelOperationResponse'
+        '404':
+          description: Channel not found in user's list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /list:
+    post:
+      tags:
+        - Channel Management
+      summary: List all channels across all folders
+      description: Shows all user's folders with their channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - Channel list displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListChannelsResponse'
+
+  /remove_all:
+    post:
+      tags:
+        - Channel Management
+      summary: Remove all channels from active folder
+      description: Removes all channels from the currently active folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - All channels removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelOperationResponse'
+
+  # ============================================================================
+  # Settings
+  # ============================================================================
+  /time:
+    post:
+      tags:
+        - Settings
+      summary: Set or view time range for news scraping
+      description: |
+        Sets the time range in hours for news collection.
+
+        **Formats:**
+        - Hours: `/time 24`
+        - Days: `/time 7d`
+
+        **Constraints:**
+        - Min: 1 hour
+        - Max: 720 hours (30 days)
+        - Default: 24 hours
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeSettingRequest'
+      responses:
+        '200':
+          description: Success - Time range updated or displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSettingResponse'
+        '400':
+          description: Invalid time value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /posts:
+    post:
+      tags:
+        - Settings
+      summary: Set or view maximum number of news summaries
+      description: |
+        Sets the maximum number of news summaries to display.
+
+        **Example:** `/posts 10`
+
+        **Constraints:**
+        - Min: 1
+        - Max: 30
+        - Default: 10
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostsSettingRequest'
+      responses:
+        '200':
+          description: Success - Posts count updated or displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostsSettingResponse'
+        '400':
+          description: Invalid posts count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # Folder Management
+  # ============================================================================
+  /manage_folders:
+    post:
+      tags:
+        - Folder Management
+      summary: Display folder management interface
+      description: |
+        Shows all user folders with options to:
+        - Switch active folder
+        - Create new folder
+        - Delete folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Success - Folder management menu displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderManagementResponse'
+
+  /switch_folder:
+    post:
+      tags:
+        - Folder Management
+      summary: Switch active folder
+      description: Changes the active folder for channel operations and news retrieval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchFolderRequest'
+      responses:
+        '200':
+          description: Success - Folder switched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderOperationResponse'
+        '404':
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /create_folder:
+    post:
+      tags:
+        - Folder Management
+      summary: Create new folder
+      description: |
+        Creates a new folder for organizing channels.
+
+        **Constraints:**
+        - Name length: 1-10 characters
+        - Must be unique
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '200':
+          description: Success - Folder created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderOperationResponse'
+        '400':
+          description: Invalid folder name or folder already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /delete_folder:
+    post:
+      tags:
+        - Folder Management
+      summary: Delete folder
+      description: |
+        Deletes a folder and all its channels.
+
+        **Note:** Cannot delete the last remaining folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteFolderRequest'
+      responses:
+        '200':
+          description: Success - Folder deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderOperationResponse'
+        '400':
+          description: Cannot delete last folder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # Admin
+  # ============================================================================
+  /restore_backup:
+    post:
+      tags:
+        - Admin
+      summary: Restore user data from backup
+      description: |
+        Admin-only command to restore user data from backup.
+
+        **Usage:**
+        - `/restore_backup` - List available backups
+        - `/restore_backup latest` - Restore latest backup
+        - `/restore_backup <number>` - Restore specific backup
+
+        **Requires:** ADMIN_CHAT_ID_BACKUP environment variable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreBackupRequest'
+      responses:
+        '200':
+          description: Success - Backup restored or list displayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreBackupResponse'
+        '401':
+          description: Unauthorized - Not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Backup not found or no backups available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # Channel Owner Forms
+  # ============================================================================
+  /add_to_feed:
+    post:
+      tags:
+        - Channel Owner Forms
+      summary: Submit channel to news feed
+      description: |
+        Channel owners can submit their channel to be added to the curated news feed.
+
+        **Required:**
+        - Channel name (must start with @)
+        - Hashtag category (e.g., #tech, #news, #crypto)
+        - Brief description (5-30 characters)
+        - Telegram username must match channel description
+
+        **Form flow:**
+        1. Enter channel name
+        2. Select hashtag
+        3. Enter description
+        4. Submit to admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddToFeedRequest'
+      responses:
+        '200':
+          description: Success - Form submitted to admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '400':
+          description: Invalid input or missing username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /remove_from_feed:
+    post:
+      tags:
+        - Channel Owner Forms
+      summary: Request channel removal from news feed
+      description: |
+        Channel owners can request their channel be removed from the news feed.
+
+        **Required:**
+        - Channel name (must exist in feed)
+        - Optional reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveFromFeedRequest'
+      responses:
+        '200':
+          description: Success - Form submitted to admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '404':
+          description: Channel not found in feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /restrict_access:
+    post:
+      tags:
+        - Channel Owner Forms
+      summary: Request access restriction for channel
+      description: |
+        Channel owners can request their channel be restricted from bot access.
+
+        **Required:**
+        - Channel name
+        - Optional reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestrictAccessRequest'
+      responses:
+        '200':
+          description: Success - Form submitted to admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+
+# ============================================================================
+# Components
+# ============================================================================
+components:
+  schemas:
+    # Base Telegram types
+    TelegramUpdate:
+      type: object
+      required:
+        - update_id
+      properties:
+        update_id:
+          type: integer
+          description: Unique update identifier
+        message:
+          $ref: '#/components/schemas/TelegramMessage'
+        callback_query:
+          $ref: '#/components/schemas/TelegramCallbackQuery'
+
+    TelegramMessage:
+      type: object
+      properties:
+        message_id:
+          type: integer
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        chat:
+          $ref: '#/components/schemas/TelegramChat'
+        text:
+          type: string
+
+    TelegramUser:
+      type: object
+      required:
+        - id
+        - is_bot
+        - first_name
+      properties:
+        id:
+          type: integer
+          description: Unique user identifier
+        is_bot:
+          type: boolean
+        first_name:
+          type: string
+        username:
+          type: string
+
+    TelegramChat:
+      type: object
+      required:
+        - id
+        - type
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [private, group, supergroup, channel]
+
+    TelegramCallbackQuery:
+      type: object
+      properties:
+        id:
+          type: string
+        from:
+          $ref: '#/components/schemas/TelegramUser'
+        message:
+          $ref: '#/components/schemas/TelegramMessage'
+        data:
+          type: string
+          description: Callback data
+
+    # User data structures
+    UserData:
+      type: object
+      properties:
+        folders:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example:
+            Папка1: ['@channel1', '@channel2']
+            Папка2: ['@channel3']
+        active_folder:
+          type: string
+          example: Папка1
+        time_limit:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 24
+          description: Time range in hours
+        max_posts:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 10
+          description: Maximum summaries to display
+        news_requests:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            '2025-10-11': 3
+        last_news_date:
+          type: string
+          format: date
+          description: Last news request date (UTC)
+        news_request_count:
+          type: integer
+          description: Request count for current day
+
+    NewsSummary:
+      type: object
+      properties:
+        headline:
+          type: string
+          description: Generated headline
+        summary:
+          type: string
+          description: AI-generated summary
+        count:
+          type: integer
+          description: Number of similar posts clustered
+        channels:
+          type: array
+          items:
+            type: string
+          description: Source channel names
+        post_links:
+          type: array
+          items:
+            type: object
+            properties:
+              channel:
+                type: string
+              url:
+                type: string
+                format: uri
+
+    # Request schemas
+    AddChannelRequest:
+      type: object
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example: '@channel01'
+
+    RemoveChannelRequest:
+      type: object
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example: '@channel01'
+
+    TimeSettingRequest:
+      type: object
+      properties:
+        value:
+          type: string
+          description: Hours (e.g., '24') or days (e.g., '7d')
+          example: '24'
+
+    PostsSettingRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 10
+
+    SwitchFolderRequest:
+      type: object
+      required:
+        - folder_name
+      properties:
+        folder_name:
+          type: string
+          maxLength: 10
+          example: Папка1
+
+    CreateFolderRequest:
+      type: object
+      required:
+        - folder_name
+      properties:
+        folder_name:
+          type: string
+          minLength: 1
+          maxLength: 10
+          example: МойКанал
+
+    DeleteFolderRequest:
+      type: object
+      required:
+        - folder_name
+      properties:
+        folder_name:
+          type: string
+          example: Папка2
+
+    RestoreBackupRequest:
+      type: object
+      properties:
+        selection:
+          type: string
+          description: 'Backup selection: "latest" or backup number'
+          example: latest
+
+    AddToFeedRequest:
+      type: object
+      required:
+        - channel
+        - hashtag
+        - description
+      properties:
+        channel:
+          type: string
+          pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example: '@mychannel'
+        hashtag:
+          type: string
+          enum: ['#it', '#tech', '#news', '#business', '#crypto', '#science', '#ai', '#startup', '#fintech', '#web3']
+        description:
+          type: string
+          minLength: 5
+          maxLength: 30
+          example: Tech news and reviews
+
+    RemoveFromFeedRequest:
+      type: object
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example: '@mychannel'
+        reason:
+          type: string
+          description: Optional reason
+
+    RestrictAccessRequest:
+      type: object
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          pattern: '^@[a-zA-Z0-9_]{5,32}$'
+          example: '@mychannel'
+        reason:
+          type: string
+          description: Optional reason
+
+    # Response schemas
+    StartResponse:
+      type: object
+      properties:
+        welcome_message:
+          type: string
+        keyboard:
+          type: object
+          description: Main menu inline keyboard
+
+    HelpResponse:
+      type: object
+      properties:
+        help_text:
+          type: string
+
+    NewsResponse:
+      type: object
+      properties:
+        header:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            unique_news_count:
+              type: integer
+            channel_count:
+              type: integer
+        summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewsSummary'
+        remaining_requests:
+          type: integer
+          description: Remaining requests for today
+
+    ChannelOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        channel:
+          type: string
+
+    ListChannelsResponse:
+      type: object
+      properties:
+        total_channels:
+          type: integer
+        folders:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        active_folder:
+          type: string
+
+    TimeSettingResponse:
+      type: object
+      properties:
+        current_hours:
+          type: integer
+        display_text:
+          type: string
+          description: Formatted display (e.g., "24 часа", "7 дней")
+
+    PostsSettingResponse:
+      type: object
+      properties:
+        current_count:
+          type: integer
+        max_allowed:
+          type: integer
+
+    FolderManagementResponse:
+      type: object
+      properties:
+        folders:
+          type: array
+          items:
+            type: string
+        active_folder:
+          type: string
+        folder_count:
+          type: integer
+
+    FolderOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        folder_name:
+          type: string
+
+    RestoreBackupResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        backups:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+
+    FormSubmissionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: string
+
+    RateLimitError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Rate limit exceeded
+        remaining_requests:
+          type: integer
+          example: 0
+        reset_time:
+          type: string
+          format: date-time
+          description: UTC time when limit resets (00:00:01 UTC)

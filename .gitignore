@@ -30,7 +30,7 @@ user_subs.json
 .claude/
 backups/
 bot.py.backup
-docs/
+
 
 # Docker deployment data directories
 data/
