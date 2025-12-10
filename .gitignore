@@ -30,19 +30,9 @@ user_subs.json
 .claude/
 backups/
 bot.py.backup
-docs/DEPLOYMENT.md
-docs/RATE_LIMITER.md
-docs/SECURITY_NOTES_PHASE1.md
-bot\services
 
-# code
-bot\services\__init__.py
-bot\services\ai.py
-bot\services\clustering.py
-bot\services\messenger.py
-bot\services\rate_limiter.py
-bot\services\scraper.py
-bot\services\storage.py
+
+
 
 
 
