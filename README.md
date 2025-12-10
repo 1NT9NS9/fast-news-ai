@@ -1,4 +1,4 @@
-# Keytime Bot
+# FAST-NEWS-AI 
 
 A Telegram bot for aggregating and summarizing news from multiple Telegram channels using Google Gemini AI.
 ## [Telegram_bot](t.me/FAST_NEWS_Al_BOT)
