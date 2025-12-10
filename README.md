@@ -3,13 +3,18 @@
 A Telegram bot for aggregating and summarizing news from multiple Telegram channels using Google Gemini AI.
 [Bot](t.me/FAST_NEWS_Al_BOT)
 <img width="412" height="589" alt="image" src="https://github.com/user-attachments/assets/11a00ed4-471f-4426-91e0-8c061914bde9" /> 
+
+---
+
 [Channel tg](https://t.me/FAST_NEWS_AI)
 <img width="410" height="492" alt="image" src="https://github.com/user-attachments/assets/21e1640e-642b-465c-b656-0cff449d7435" />
+
+---
+
 [Channel youtube](https://www.youtube.com/@FAST_NEWS_Al)
 <img width="1272" height="700" alt="image" src="https://github.com/user-attachments/assets/de0c2313-05c2-44d8-bbfb-0febf3ad4ddf" />
 
-
-
+---
 
 ## Features
 
