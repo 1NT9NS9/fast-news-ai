@@ -46,8 +46,6 @@ python bot.py
 
 ### VPS Deployment (Recommended for 24/7 Operation)
 
-For complete VPS deployment instructions on Vultr, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
 **Quick Deploy:**
 
 1. Upload code to VPS
@@ -176,18 +174,7 @@ docker stats keytime-bot
 ### Bot Statistics
 Use the `/log` command in your admin Telegram chat.
 
-## Troubleshooting
+# ⭐️Important
+bot/services folder is empty!
+I removed the code from this folder. Message me on Telegram if you need it.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md#troubleshooting) for common issues and solutions.
-
-## License
-
-[Your License Here]
-
-## Support
-
-For issues or questions:
-1. Check [DEPLOYMENT.md](DEPLOYMENT.md)
-2. Review logs: `docker compose logs -f`
-3. Verify `.env` configuration
-4. Check system resources
