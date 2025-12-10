@@ -2,7 +2,8 @@
 
 A Telegram bot for aggregating and summarizing news from multiple Telegram channels using Google Gemini AI.
 
-<img width="412" height="589" alt="image" src="https://github.com/user-attachments/assets/11a00ed4-471f-4426-91e0-8c061914bde9" />
+<img width="412" height="589" alt="image" src="https://github.com/user-attachments/assets/11a00ed4-471f-4426-91e0-8c061914bde9" />  <img width="410" height="492" alt="image" src="https://github.com/user-attachments/assets/21e1640e-642b-465c-b656-0cff449d7435" />
+
 
 ## Features
 
