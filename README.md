@@ -1,7 +1,7 @@
 # FAST-NEWS-AI 
 
 A Telegram bot for aggregating and summarizing news from multiple Telegram channels using Google Gemini AI.
-## [Telegram_bot](t.me/FAST_NEWS_Al_BOT)
+## [Telegram_bot](https://t.me/FAST_NEWS_Al_BOT)
 <img width="412" height="589" alt="image" src="https://github.com/user-attachments/assets/11a00ed4-471f-4426-91e0-8c061914bde9" /> 
 
 ---
