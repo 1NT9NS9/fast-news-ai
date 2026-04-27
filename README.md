@@ -7,7 +7,7 @@ A Telegram bot for aggregating and summarizing news from multiple Telegram chann
 ---
 
 ## [Telegram_channel](https://t.me/FAST_NEWS_AI)
-<img width="410" height="492" alt="image" src="https://github.com/user-attachments/assets/21e1640e-642b-465c-b656-0cff449d7435" />
+<img width="408" height="374" alt="image" src="https://github.com/user-attachments/assets/b171ddc3-4dcd-4698-ba78-525980e9975f" />
 
 ---
 
